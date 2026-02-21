@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ticket with Product Factory context — Mock</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface2: #243044;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-dim: #388bfd33;
+      --success: #3fb950;
+      --border: #30363d;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; }
+    .header {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 12px 24px; display: flex; align-items: center; justify-content: space-between;
+    }
+    .logo { font-weight: 700; color: var(--accent); }
+    .back { color: var(--text-muted); text-decoration: none; font-size: 13px; }
+    .back:hover { color: var(--accent); }
+    main { max-width: 720px; margin: 0 auto; padding: 32px 24px; }
+    h1 { font-size: 1rem; margin: 0 0 8px 0; font-weight: 600; }
+    .subtitle { color: var(--text-muted); margin-bottom: 24px; font-size: 12px; }
+
+    /* Simulated ticket (e.g. GitHub Issue / Jira) */
+    .ticket {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .ticket-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .ticket-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 8px; }
+    .ticket-meta { font-size: 12px; color: var(--text-muted); }
+    .pf-context-inject {
+      background: var(--surface2);
+      border: 1px dashed var(--accent);
+      border-radius: 6px;
+      padding: 14px 18px;
+      margin: 16px 20px;
+      font-size: 13px;
+    }
+    .pf-context-inject .label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin-bottom: 8px; }
+    .pf-context-inject .row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
+    .pf-context-inject .row:last-child { margin-bottom: 0; }
+    .pf-context-inject .cap-id { font-weight: 700; color: var(--accent); }
+    .pf-context-inject .stage { background: var(--accent-dim); color: var(--accent); padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+    .pf-context-inject a { color: var(--accent); text-decoration: none; }
+    .pf-context-inject a:hover { text-decoration: underline; }
+    .pf-context-inject .links { display: flex; gap: 12px; flex-wrap: wrap; }
+    .ticket-body {
+      padding: 20px;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text-muted);
+    }
+    .footer { text-align: center; padding: 24px; color: var(--text-muted); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <span class="logo">Product Factory</span>
+    <a href="product-factory-dashboard.html" class="back">← Pipeline</a>
+  </header>
+
+  <main>
+    <h1>Ticket with Product Factory context</h1>
+    <p class="subtitle">Mock of context injected into a ticket (GitHub Issue / Jira). Same context bundle as the pipeline panel — so you can work from the ticket without leaving it.</p>
+
+    <div class="ticket">
+      <div class="ticket-header">
+        <div class="ticket-title">[Build] Implement lead scoring API — PROJ-101</div>
+        <div class="ticket-meta">#101 · Open · Assigned: Backend · Labels: capability:PROJ-101, stage:Build</div>
+      </div>
+
+      <div class="pf-context-inject">
+        <div class="label">Product Factory context (from connector / bot)</div>
+        <div class="row">
+          <span class="cap-id">PROJ-101</span>
+          <span class="stage">Build</span>
+          <span>Lead scoring API</span>
+        </div>
+        <div class="row links">
+          <a href="#">Open in GitHub</a>
+          <a href="#">Open spec in Git</a>
+          <a href="#">product-specs/PROJ-101.md</a>
+          <a href="#">docs/architecture/PROJ-101.md</a>
+          <a href="#">Open Slack #proj-101</a>
+        </div>
+        <div class="row">
+          <span>Approved:</span>
+          <span>Compliance + Arch <code>c4d5e6f</code></span>
+        </div>
+        <div class="row">
+          <span>COGS:</span>
+          <span>$120/mo</span>
+        </div>
+      </div>
+
+      <div class="ticket-body">
+        <strong>Description</strong><br>
+        Implement the lead scoring API as per approved spec and architecture. Capability PROJ-101. Spec and arch links above; discussion in #proj-101.
+      </div>
+    </div>
+
+    <p class="subtitle" style="margin-top: 24px;">In the real system, this block is kept in sync by the hybrid layer (or a bot) so the ticket always shows current stage, doc links, and Slack. Same for PRs: bot comment or template can show capability + spec/arch + Slack.</p>
+  </main>
+
+  <footer class="footer">
+    Product Factory mock · Context in ticket mirrors pipeline context bundle
+  </footer>
+</body>
+</html>

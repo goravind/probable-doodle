@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Select product — Product Factory</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface2: #243044;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --border: #30363d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 1000px;
+      margin: 0 auto 32px;
+    }
+    .logo { font-weight: 700; font-size: 1.25rem; color: var(--accent); }
+    .out { color: var(--text-muted); text-decoration: none; font-size: 13px; }
+    .out:hover { color: var(--accent); }
+    main { max-width: 1000px; margin: 0 auto; }
+    h1 { font-size: 1.5rem; margin: 0 0 8px 0; }
+    .subtitle { color: var(--text-muted); margin-bottom: 32px; font-size: 14px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .product-card {
+      display: block;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      text-decoration: none;
+      color: inherit;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .product-card:hover {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+    }
+    .product-card .icon { font-size: 2rem; margin-bottom: 12px; }
+    .product-card .name { font-size: 1.1rem; font-weight: 600; margin-bottom: 4px; }
+    .product-card .desc { font-size: 13px; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <span class="logo">Product Factory</span>
+    <a href="login.html" class="out">Sign out</a>
+  </header>
+  <main>
+    <h1>Select a product</h1>
+    <p class="subtitle">Choose a product to view its pipeline, leadership metrics, and active capabilities. Product configuration (ticketing, repos, codebase context, meetings, messaging) is set when defining a product or via <a href="product-config-mock.html" style="color: var(--accent);">Configure product</a> in the dashboard.</p>
+    <div class="grid">
+      <a class="product-card" href="product-factory-dashboard.html?product=CRM">
+        <span class="icon">📊</span>
+        <div class="name">CRM</div>
+        <div class="desc">Customer relationship management · Leads, deals, contacts</div>
+      </a>
+      <a class="product-card" href="product-factory-dashboard.html?product=Internal+Tools">
+        <span class="icon">🔧</span>
+        <div class="name">Internal Tools</div>
+        <div class="desc">Admin and operations · Dashboards, config, reports</div>
+      </a>
+      <a class="product-card" href="product-factory-dashboard.html?product=Marketplace">
+        <span class="icon">🛒</span>
+        <div class="name">Marketplace</div>
+        <div class="desc">Buyer and seller experience · Listings, checkout, fulfillment</div>
+      </a>
+    </div>
+  </main>
+  <script>
+    if (!sessionStorage.getItem('pf-login')) {
+      window.location.href = 'login.html';
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Product configuration — Product Factory</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface2: #243044;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-dim: #388bfd33;
+      --success: #3fb950;
+      --border: #30363d;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; }
+    .header {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 12px 24px; display: flex; align-items: center; justify-content: space-between;
+    }
+    .logo { font-weight: 700; color: var(--accent); }
+    .back { color: var(--text-muted); text-decoration: none; font-size: 13px; }
+    .back:hover { color: var(--accent); }
+    main { max-width: 720px; margin: 0 auto; padding: 32px 24px; }
+    h1 { font-size: 1.5rem; margin: 0 0 8px 0; }
+    .subtitle { color: var(--text-muted); margin-bottom: 24px; font-size: 13px; }
+    .product-badge { display: inline-block; background: var(--accent-dim); color: var(--accent); padding: 6px 12px; border-radius: 8px; font-weight: 600; margin-bottom: 24px; }
+    .config-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 12px;
+    }
+    .config-section h2 { font-size: 0.95rem; margin: 0 0 10px 0; color: var(--accent); }
+    .config-section p { margin: 0; font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+    .config-section .value { font-size: 13px; color: var(--text); margin-top: 6px; font-family: ui-monospace, monospace; }
+    .config-section.required .label::after { content: ' (required for new product)'; color: var(--accent); font-weight: 500; }
+    .footer { text-align: center; padding: 24px; color: var(--text-muted); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <span class="logo">Product Factory</span>
+    <a href="product-factory-dashboard.html" class="back" id="backLink">← Pipeline</a>
+  </header>
+
+  <main>
+    <div class="product-badge" id="productBadge">Product: CRM</div>
+    <h1>Product configuration</h1>
+    <p class="subtitle">Configure once when building the factory or when defining a new product. All capabilities under this product use the same context.</p>
+
+    <div class="config-section required">
+      <h2>Ticketing system</h2>
+      <p class="label">Where tickets and approval state live</p>
+      <div class="value">JIRA · https://company.atlassian.net · Project: CRM, Board: Pipeline</div>
+    </div>
+
+    <div class="config-section">
+      <h2>Repos</h2>
+      <p>App repo and specs/arch paths</p>
+      <div class="value">App: github.com/org/crm-app · Specs: product-specs/ · Arch: docs/architecture/</div>
+    </div>
+
+    <div class="config-section required">
+      <h2>Codebase context</h2>
+      <p class="label">How GenAI gets existing code/patterns (required when defining a new product)</p>
+      <div class="value">Repo: crm-app · Index: full repo · Summarize: src/, shared/ · Refresh: on push</div>
+    </div>
+
+    <div class="config-section">
+      <h2>Meeting notes / recordings</h2>
+      <p>Pipeline and storage for meeting context</p>
+      <div class="value">Fireflies → transcribe → summarize → tag by capability ID · Store: Git meetings/</div>
+    </div>
+
+    <div class="config-section">
+      <h2>Messaging</h2>
+      <p>Channel naming so capability ID maps to channel</p>
+      <div class="value">Slack · Channel: #proj-123 (capability ID)</div>
+    </div>
+
+    <div class="config-section">
+      <h2>Cycle time</h2>
+      <p>Per-product target</p>
+      <div class="value">Max: 7 days · Ideal: 24h</div>
+    </div>
+
+    <div class="config-section">
+      <h2>Compliance</h2>
+      <p>Checklist or gate config</p>
+      <div class="value">Checklist: data, privacy, regulatory · Gate: stage 6</div>
+    </div>
+
+    <p class="subtitle" style="margin-top: 24px;">One place to configure → consistent context for all capabilities. No per-capability setup.</p>
+  </main>
+
+  <footer class="footer">
+    Product Factory mock · Configure when building factory or defining a new product
+  </footer>
+  <script>
+    (function() {
+      var p = new URLSearchParams(window.location.search).get('product');
+      var back = document.getElementById('backLink');
+      var badge = document.getElementById('productBadge');
+      if (p) {
+        if (back) back.href = 'product-factory-dashboard.html?product=' + encodeURIComponent(p);
+        if (badge) badge.textContent = 'Product: ' + p;
+      }
+    })();
+  </script>
+</body>
+</html>

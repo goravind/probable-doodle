@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Product Factory — Pipeline & Leadership</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface2: #243044;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-dim: #388bfd33;
+      --success: #3fb950;
+      --warning: #d29922;
+      --danger: #f85149;
+      --border: #30363d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 14px;
+    }
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .logo { font-weight: 700; font-size: 1.25rem; color: var(--accent); }
+    .product-name { font-size: 13px; color: var(--text-muted); padding: 6px 12px; border-right: 1px solid var(--border); margin-right: 4px; }
+    .nav { display: flex; gap: 8px; align-items: center; }
+    .nav a {
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+    }
+    .nav a:hover, .nav a.active { color: var(--text); background: var(--surface2); }
+    .nav a.active { color: var(--accent); }
+    .badge { background: var(--accent-dim); color: var(--accent); padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+    main { max-width: 1600px; margin: 0 auto; padding: 24px; }
+    h1 { font-size: 1.5rem; margin: 0 0 8px 0; }
+    .subtitle { color: var(--text-muted); margin-bottom: 24px; font-size: 13px; }
+
+    /* Leadership metrics strip */
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .metric {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .metric .value { font-size: 1.75rem; font-weight: 700; color: var(--accent); }
+    .metric .label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+    /* Where to act */
+    .section { margin-bottom: 32px; }
+    .section h2 { font-size: 1.1rem; margin-bottom: 12px; color: var(--text-muted); font-weight: 500; }
+    .act-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+    .act-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      border-left: 3px solid var(--warning);
+    }
+    .act-card.blocked { border-left-color: var(--danger); }
+    .act-card.call { border-left-color: var(--accent); }
+    .act-card .id { font-weight: 600; color: var(--accent); font-size: 13px; }
+    .act-card .title { margin: 4px 0 2px 0; }
+    .act-card .reason { font-size: 12px; color: var(--text-muted); }
+
+    /* Pipeline */
+    .pipeline { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 16px; min-height: 320px; }
+    .column {
+      flex: 0 0 200px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+    }
+    .column h3 { font-size: 12px; color: var(--text-muted); margin: 0 0 12px 0; font-weight: 500; text-transform: uppercase; letter-spacing: .03em; }
+    .column .count { background: var(--surface2); color: var(--text-muted); padding: 2px 8px; border-radius: 10px; font-size: 11px; margin-left: 8px; }
+    .card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .card:hover { border-color: var(--accent); }
+    .card .id { font-weight: 600; color: var(--accent); font-size: 12px; }
+    .card .name { margin: 4px 0 2px 0; }
+    .card .meta { font-size: 11px; color: var(--text-muted); }
+    .card.blocked { border-color: var(--danger); opacity: .9; }
+    .card .blocked-by { font-size: 11px; color: var(--danger); margin-top: 4px; }
+    .card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+
+    /* Stage context hint (under column header) */
+    .column .context-hint {
+      font-size: 10px; color: var(--text-muted); margin-bottom: 10px; padding: 6px 8px;
+      background: var(--bg); border-radius: 4px; line-height: 1.4;
+    }
+    .column .context-hint span { display: inline-block; margin-right: 6px; }
+
+    /* Context panel (right side when card selected) */
+    .pipeline-wrap { display: flex; gap: 24px; align-items: flex-start; }
+    .pipeline-wrap .pipeline { flex: 1; min-width: 0; }
+    .context-panel {
+      flex: 0 0 360px; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 16px; position: sticky; top: 80px;
+    }
+    .context-panel.hidden { display: none; }
+    .context-panel h3 { font-size: 13px; margin: 0 0 12px 0; color: var(--accent); }
+    .context-panel .stage-badge { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 12px; margin-bottom: 12px; background: var(--surface2); }
+    .context-panel .group { margin-bottom: 16px; }
+    .context-panel .group-title { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin-bottom: 6px; }
+    .context-panel .group a { color: var(--accent); text-decoration: none; font-size: 13px; display: block; margin-bottom: 2px; }
+    .context-panel .group a:hover { text-decoration: underline; }
+    .context-panel .group .path { font-size: 12px; color: var(--text-muted); font-family: ui-monospace, monospace; }
+    .context-panel .group .version { font-size: 11px; color: var(--success); }
+    .context-panel .empty { font-size: 12px; color: var(--text-muted); }
+    .context-panel .context-bundle-note { font-size: 11px; color: var(--text-muted); margin: 0 0 12px 0; }
+    .context-panel .open-links { display: flex; flex-wrap: wrap; gap: 8px; }
+    .context-panel .open-links a { display: inline-block; padding: 4px 10px; background: var(--surface2); border-radius: 6px; font-size: 12px; margin-bottom: 0; }
+    .context-panel .open-links a:hover { background: var(--accent-dim); }
+    .tests-ok { font-size: 12px; color: var(--success); }
+    .tests-fail { font-size: 12px; color: var(--danger); }
+    .meeting-row { margin-bottom: 8px; font-size: 12px; }
+    .meeting-row .text-muted { font-size: 11px; }
+
+    /* All active capabilities table */
+    .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--border); }
+    th { background: var(--surface2); color: var(--text-muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+    tr:hover td { background: var(--surface2); }
+    .id-link { color: var(--accent); text-decoration: none; font-weight: 600; }
+    .id-link:hover { text-decoration: underline; }
+    .stage { padding: 2px 8px; border-radius: 4px; font-size: 11px; background: var(--surface); }
+    .stage.spec { background: #388bfd22; color: #58a6ff; }
+    .stage.build { background: #3fb95022; color: #3fb950; }
+    .stage.uat { background: #d2992222; color: #d29922; }
+    .footer { text-align: center; padding: 24px; color: var(--text-muted); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <span class="logo">Product Factory</span>
+    <nav class="nav">
+      <span class="product-name" id="productName">—</span>
+      <a href="#leadership">Leadership</a>
+      <a href="#pipeline" class="active">Pipeline</a>
+      <a href="#all">All capabilities</a>
+      <a href="capability-lifecycle.html" id="lifecycleLink">How we build one</a>
+      <a href="how-we-build-software.html" id="buildSoftwareLink">How we build (software)</a>
+      <a href="product-config-mock.html" id="configLink">Configure product</a>
+      <a href="product-select.html">Switch product</a>
+      <span class="badge">Weekly digest · On-demand</span>
+    </nav>
+  </header>
+
+  <main>
+    <section id="leadership" class="section">
+      <h1>Leadership view</h1>
+      <p class="subtitle">Critical metrics, project updates, blockers, conflicts to resolve, and calls to take. Data from GitHub + Git.</p>
+
+      <div class="metrics">
+        <div class="metric"><div class="value">12</div><div class="label">Active capabilities</div></div>
+        <div class="metric"><div class="value">3</div><div class="label">Blocked</div></div>
+        <div class="metric"><div class="value">2</div><div class="label">Conflicts to resolve</div></div>
+        <div class="metric"><div class="value">4</div><div class="label">Calls to take</div></div>
+        <div class="metric"><div class="value">5d</div><div class="label">Longest in stage</div></div>
+      </div>
+
+      <h2>Where to act</h2>
+      <div class="act-grid">
+        <div class="act-card blocked">
+          <div class="id">PROJ-105</div>
+          <div class="title">Lead scoring UI</div>
+          <div class="reason">Blocked by PROJ-104 (API not shipped). Waiver or wait.</div>
+        </div>
+        <div class="act-card">
+          <div class="id">PROJ-107</div>
+          <div class="title">Deal pipeline view</div>
+          <div class="reason">Conflict: Product and Eng disagree on scope for v1. Needs alignment.</div>
+        </div>
+        <div class="act-card call">
+          <div class="id">PROJ-103</div>
+          <div class="title">Auth refresh flow</div>
+          <div class="reason">Release approval needed — ready for prod. Release manager to sign off.</div>
+        </div>
+        <div class="act-card call">
+          <div class="id">PROJ-106</div>
+          <div class="title">Export to CSV</div>
+          <div class="reason">Architecture approval pending. Architect review requested.</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="pipeline" class="section">
+      <h1>Pipeline</h1>
+      <p class="subtitle" id="pipelineSubtitle">Every active capability by stage. 7-day max · 24h ideal. Click a card to see context (tickets, docs, Slack) at this stage.</p>
+
+      <div class="pipeline-wrap">
+        <div class="pipeline">
+          <div class="column">
+            <h3>Triage <span class="count">1</span></h3>
+            <div class="context-hint"><span>📋</span> Idea ticket · Capability ID</div>
+            <div class="card" data-id="PROJ-108" data-name="Bulk import" data-stage="Triage" data-ctx='{"ticket":"#108","doc":null,"slack":"#proj-108","cogs":null,"approved":null,"blocked":null}'><div class="id">PROJ-108</div><div class="name">Bulk import</div><div class="meta">—</div></div>
+          </div>
+          <div class="column">
+            <h3>Spec <span class="count">2</span></h3>
+            <div class="context-hint"><span>📋</span> Spec ticket · <span>📄</span> Spec doc (Git) · <span>💬</span> Slack</div>
+            <div class="card" data-id="PROJ-109" data-name="Dashboard widgets" data-stage="Spec" data-ctx='{"ticket":"#109","doc":"product-specs/PROJ-109.md","slack":"#proj-109","cogs":null,"approved":null,"blocked":null}'><div class="id">PROJ-109</div><div class="name">Dashboard widgets</div><div class="meta">PM: Alex</div></div>
+            <div class="card" data-id="PROJ-110" data-name="Email templates" data-stage="Spec" data-ctx='{"ticket":"#110","doc":"product-specs/PROJ-110.md","slack":"#proj-110","cogs":null,"approved":null,"blocked":null}'><div class="id">PROJ-110</div><div class="name">Email templates</div><div class="meta">PM: Sam</div></div>
+          </div>
+          <div class="column">
+            <h3>Spec ✓</h3>
+            <div class="context-hint"><span>📋</span> Ticket · <span>📄</span> Spec (approved) · <span>💬</span> Slack</div>
+            <div class="card" data-id="PROJ-111" data-name="Notifications" data-stage="Spec approved" data-ctx='{"ticket":"#111","doc":"product-specs/PROJ-111.md","docVersion":"a1b2c3d","slack":"#proj-111","cogs":null,"approved":"Spec a1b2c3d","blocked":null}'><div class="id">PROJ-111</div><div class="name">Notifications</div><div class="meta">Awaiting arch</div></div>
+          </div>
+          <div class="column">
+            <h3>Architecture</h3>
+            <div class="context-hint"><span>📋</span> Arch ticket · <span>📄</span> Spec + Arch doc · <span>💬</span> Slack</div>
+            <div class="card" data-id="PROJ-106" data-name="Export to CSV" data-stage="Architecture" data-ctx='{"ticket":"#106","doc":"product-specs/PROJ-106.md","archDoc":"docs/architecture/PROJ-106.md","slack":"#proj-106","cogs":"$20/mo","approved":"Spec e4f5g6h","blocked":null}'><div class="id">PROJ-106</div><div class="name">Export to CSV</div><div class="meta">Arch: Jordan</div></div>
+          </div>
+          <div class="column">
+            <h3>Compliance</h3>
+            <div class="context-hint"><span>📋</span> Compliance ticket · <span>📄</span> Spec + Arch (approved) · <span>💬</span> Slack</div>
+            <div class="card" data-id="PROJ-107" data-name="Data retention" data-stage="Compliance" data-ctx='{"ticket":"#107","doc":"product-specs/PROJ-107.md","archDoc":"docs/architecture/PROJ-107.md","slack":"#proj-107","cogs":"$10/mo","approved":"Arch x9y8z7","blocked":null}'><div class="id">PROJ-107</div><div class="name">Data retention</div><div class="meta">Legal review</div></div>
+          </div>
+          <div class="column">
+            <h3>Build <span class="count">2</span></h3>
+            <div class="context-hint"><span>📋</span> Eng tickets · <span>📄</span> Spec + Arch · <span>💬</span> Slack · PRs</div>
+            <div class="card" data-id="PROJ-102" data-name="Contact merge" data-stage="Build" data-ctx='{"ticket":"#102","doc":"product-specs/PROJ-102.md","archDoc":"docs/architecture/PROJ-102.md","slack":"#proj-102","cogs":"$15/mo","approved":"Compliance + Arch b2c3d4e","prs":["!45","!46"],"blocked":null,"testsPass":18,"testsFail":0,"coverage":91,"testRunUrl":"#"}'><div class="id">PROJ-102</div><div class="name">Contact merge</div><div class="meta">Eng: 2 PRs open</div></div>
+            <div class="card blocked" data-id="PROJ-105" data-name="Lead scoring UI" data-stage="Build" data-ctx='{"ticket":"#105","doc":"product-specs/PROJ-105.md","archDoc":"docs/architecture/PROJ-105.md","slack":"#proj-105","cogs":"$40/mo","approved":"Compliance + Arch f7g8h9i","blocked":"PROJ-104"}'><div class="id">PROJ-105</div><div class="name">Lead scoring UI</div><div class="meta">Eng: blocked</div><div class="blocked-by">Blocked by PROJ-104</div></div>
+          </div>
+          <div class="column">
+            <h3>CI / Stage</h3>
+            <div class="context-hint"><span>📋</span> Tickets · <span>📄</span> Docs · <span>💬</span> Slack · Deploy link</div>
+            <div class="card" data-id="PROJ-101" data-name="Lead scoring API" data-stage="CI / Stage" data-ctx='{"ticket":"#101","doc":"product-specs/PROJ-101.md","archDoc":"docs/architecture/PROJ-101.md","slack":"#proj-101","cogs":"$120/mo","approved":"Compliance + Arch c4d5e6f","deploy":"staging","blocked":null,"testsPass":28,"testsFail":0,"coverage":82,"testRunUrl":"#","meetings":[{"date":"2025-02-15","title":"PROJ-101 kickoff","summary":"Scope: v1 API only. PM confirmed success = score in UI within 2s."},{"date":"2025-02-17","title":"Architecture review","summary":"Decided: REST + async job for heavy scoring."}]}'><div class="id">PROJ-101</div><div class="name">Lead scoring API</div><div class="meta">Staging</div></div>
+          </div>
+          <div class="column">
+            <h3>UAT</h3>
+            <div class="context-hint"><span>📋</span> UAT sign-off ticket · <span>📄</span> Docs · <span>💬</span> Slack</div>
+            <div class="card" data-id="PROJ-103" data-name="Auth refresh flow" data-stage="UAT" data-ctx='{"ticket":"#103","uatTicket":"#103-uat","doc":"product-specs/PROJ-103.md","archDoc":"docs/architecture/PROJ-103.md","slack":"#proj-103","cogs":"$80/mo","approved":"Compliance + Arch d5e6f7g","blocked":null}'><div class="id">PROJ-103</div><div class="name">Auth refresh flow</div><div class="meta">PM + Eng sign-off</div></div>
+          </div>
+          <div class="column">
+            <h3>Release</h3>
+            <div class="context-hint"><span>📋</span> Release ticket · <span>📄</span> Release notes · <span>💬</span> Slack</div>
+            <div class="card" data-id="PROJ-100" data-name="Login SSO" data-stage="Release" data-ctx='{"ticket":"#100","releaseTicket":"#100-rel","doc":"product-specs/PROJ-100.md","releaseNotes":"docs/release-notes/v1.2.md","slack":"#proj-100","cogs":"$200/mo","approved":"Release","blocked":null}'><div class="id">PROJ-100</div><div class="name">Login SSO</div><div class="meta">Ready for prod</div></div>
+          </div>
+        </div>
+
+        <aside class="context-panel hidden" id="contextPanel">
+          <h3 id="contextTitle">—</h3>
+          <div class="stage-badge" id="contextStage">—</div>
+          <p class="context-bundle-note">Context bundle for this capability · also shown in ticket &amp; PRs · <a href="ticket-context-mock.html" style="color: var(--accent);">See ticket mock</a></p>
+          <div class="group open-in-tools" id="contextOpenIn">
+            <div class="group-title">Open in your tools</div>
+            <div id="contextOpenInLinks" class="open-links">—</div>
+          </div>
+          <div class="group">
+            <div class="group-title">Ticket(s)</div>
+            <div id="contextTickets" class="empty">Click a card</div>
+          </div>
+          <div class="group">
+            <div class="group-title">Docs (Git)</div>
+            <div id="contextDocs" class="empty">—</div>
+          </div>
+          <div class="group">
+            <div class="group-title">Slack</div>
+            <div id="contextSlack" class="empty">—</div>
+          </div>
+          <div class="group">
+            <div class="group-title">COGS</div>
+            <div id="contextCogs" class="empty">—</div>
+          </div>
+          <div class="group">
+            <div class="group-title">Approved version</div>
+            <div id="contextApproved" class="empty">—</div>
+          </div>
+          <div class="group" id="contextBlockedGroup" style="display:none;">
+            <div class="group-title">Blocked by</div>
+            <div id="contextBlocked" class="path"></div>
+          </div>
+          <div class="group" id="contextTestsGroup" style="display:none;">
+            <div class="group-title">Tests / Quality (published for leadership)</div>
+            <div id="contextTests" class="empty">—</div>
+          </div>
+          <div class="group" id="contextMeetingsGroup" style="display:none;">
+            <div class="group-title">Meetings (from recordings)</div>
+            <div id="contextMeetings" class="empty">—</div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="all" class="section">
+      <h1>All active capabilities</h1>
+      <p class="subtitle">Every capability in flight. Links to tickets, docs, Slack. Tests / quality published for leadership (all online).</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Name</th>
+              <th>Stage</th>
+              <th>Owner</th>
+              <th>COGS (est.)</th>
+              <th>Blocked by</th>
+              <th>Tests / Quality</th>
+              <th>Slack</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><a href="#" class="id-link">PROJ-100</a></td>
+              <td>Login SSO</td>
+              <td><span class="stage">Release</span></td>
+              <td>Release mgr</td>
+              <td>—</td>
+              <td>—</td>
+              <td><span class="tests-ok">42 pass · 87%</span></td>
+              <td><a href="#" style="color: var(--text-muted);">#proj-100</a></td>
+            </tr>
+            <tr>
+              <td><a href="#" class="id-link">PROJ-101</a></td>
+              <td>Lead scoring API</td>
+              <td><span class="stage build">CI / Stage</span></td>
+              <td>Backend</td>
+              <td>$120/mo</td>
+              <td>—</td>
+              <td><span class="tests-ok">28 pass · 82%</span></td>
+              <td><a href="#" style="color: var(--text-muted);">#proj-101</a></td>
+            </tr>
+            <tr>
+              <td><a href="#" class="id-link">PROJ-103</a></td>
+              <td>Auth refresh flow</td>
+              <td><span class="stage uat">UAT</span></td>
+              <td>Product + Eng</td>
+              <td>$80/mo</td>
+              <td>—</td>
+              <td><span class="tests-ok">12 pass · 76%</span></td>
+              <td><a href="#" style="color: var(--text-muted);">#proj-103</a></td>
+            </tr>
+            <tr>
+              <td><a href="#" class="id-link">PROJ-105</a></td>
+              <td>Lead scoring UI</td>
+              <td><span class="stage">Build</span></td>
+              <td>Frontend</td>
+              <td>$40/mo</td>
+              <td>PROJ-104</td>
+              <td><span class="text-muted">—</span></td>
+              <td><a href="#" style="color: var(--text-muted);">#proj-105</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="footer">
+      Product Factory mock · Data from GitHub Issues + Git · Weekly digest + on-demand
+    </footer>
+  </main>
+
+  <script>
+    (function() {
+      if (!sessionStorage.getItem('pf-login')) {
+        window.location.href = 'login.html?next=' + encodeURIComponent('product-factory-dashboard.html');
+        return;
+      }
+      var params = new URLSearchParams(window.location.search);
+      var product = params.get('product');
+      if (!product) {
+        window.location.href = 'product-select.html';
+        return;
+      }
+      document.getElementById('productName').textContent = product;
+      var sub = document.getElementById('pipelineSubtitle');
+      if (sub) sub.textContent = 'Pipeline for ' + product + ' · Every active capability by stage. 7-day max · 24h ideal. Click a card to see context.';
+      var lifecycleLink = document.getElementById('lifecycleLink');
+      if (lifecycleLink) lifecycleLink.href = 'capability-lifecycle.html?product=' + encodeURIComponent(product);
+      var buildSoftwareLink = document.getElementById('buildSoftwareLink');
+      if (buildSoftwareLink) buildSoftwareLink.href = 'how-we-build-software.html?product=' + encodeURIComponent(product);
+      var configLink = document.getElementById('configLink');
+      if (configLink) configLink.href = 'product-config-mock.html?product=' + encodeURIComponent(product);
+    })();
+  </script>
+  <script>
+    (function() {
+      var panel = document.getElementById('contextPanel');
+      var title = document.getElementById('contextTitle');
+      var stageEl = document.getElementById('contextStage');
+      var ticketsEl = document.getElementById('contextTickets');
+      var docsEl = document.getElementById('contextDocs');
+      var slackEl = document.getElementById('contextSlack');
+      var cogsEl = document.getElementById('contextCogs');
+      var approvedEl = document.getElementById('contextApproved');
+      var blockedGroup = document.getElementById('contextBlockedGroup');
+      var blockedEl = document.getElementById('contextBlocked');
+      var openInEl = document.getElementById('contextOpenInLinks');
+      var testsGroup = document.getElementById('contextTestsGroup');
+      var testsEl = document.getElementById('contextTests');
+      var meetingsGroup = document.getElementById('contextMeetingsGroup');
+      var meetingsEl = document.getElementById('contextMeetings');
+
+      document.querySelectorAll('.pipeline .card').forEach(function(card) {
+        card.addEventListener('click', function() {
+          document.querySelectorAll('.pipeline .card').forEach(function(c) { c.classList.remove('selected'); });
+          card.classList.add('selected');
+          var id = card.getAttribute('data-id');
+          var name = card.getAttribute('data-name');
+          var stage = card.getAttribute('data-stage');
+          var ctx = {};
+          try { ctx = JSON.parse(card.getAttribute('data-ctx') || '{}'); } catch (e) {}
+          title.textContent = id + ' · ' + name;
+          stageEl.textContent = stage;
+          var openParts = [];
+          if (ctx.ticket) openParts.push('<a href="#">Open in GitHub</a>');
+          openParts.push('<a href="#">Open in Jira</a>');
+          if (ctx.slack) openParts.push('<a href="#">Open Slack</a>');
+          if (ctx.doc) openParts.push('<a href="#">Open spec in Git</a>');
+          openInEl.innerHTML = openParts.length ? openParts.join('') : '<span class="empty">—</span>';
+          ticketsEl.innerHTML = ctx.ticket ? '<a href="#">Issue #' + ctx.ticket.replace('#','') + '</a>' + (ctx.uatTicket ? ' · <a href="#">UAT ' + ctx.uatTicket + '</a>' : '') + (ctx.releaseTicket ? ' · <a href="#">Release ' + ctx.releaseTicket + '</a>' : '') : '<span class="empty">—</span>';
+          var docParts = [];
+          if (ctx.doc) docParts.push('<a href="#">' + ctx.doc + '</a>');
+          if (ctx.archDoc) docParts.push('<a href="#">' + ctx.archDoc + '</a>');
+          if (ctx.releaseNotes) docParts.push('<a href="#">' + ctx.releaseNotes + '</a>');
+          docsEl.innerHTML = docParts.length ? docParts.join('<br>') : '<span class="empty">—</span>';
+          slackEl.innerHTML = ctx.slack ? '<a href="#">' + ctx.slack + '</a>' : '<span class="empty">—</span>';
+          cogsEl.textContent = ctx.cogs || '—';
+          approvedEl.innerHTML = ctx.approved ? '<span class="version">' + ctx.approved + '</span>' : '<span class="empty">—</span>';
+          if (ctx.blocked) { blockedGroup.style.display = 'block'; blockedEl.textContent = ctx.blocked; blockedEl.style.color = 'var(--danger)'; } else { blockedGroup.style.display = 'none'; }
+          if (ctx.testsPass != null || ctx.coverage != null) {
+            testsGroup.style.display = 'block';
+            var t = [];
+            if (ctx.testsPass != null) t.push(ctx.testsFail != null ? ctx.testsPass + ' pass, ' + ctx.testsFail + ' fail' : ctx.testsPass + ' pass');
+            if (ctx.coverage != null) t.push(ctx.coverage + '% coverage');
+            testsEl.innerHTML = t.length ? t.join(' · ') + (ctx.testRunUrl ? ' · <a href="#">View run</a>' : '') : '—';
+          } else { testsGroup.style.display = 'none'; }
+          if (ctx.meetings && ctx.meetings.length) {
+            meetingsGroup.style.display = 'block';
+            meetingsEl.innerHTML = ctx.meetings.map(function(m) { return '<div class="meeting-row"><a href="#">' + (m.title || m.date) + '</a><br><span class="text-muted">' + (m.summary || '') + '</span></div>'; }).join('');
+          } else { meetingsGroup.style.display = 'none'; }
+          panel.classList.remove('hidden');
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

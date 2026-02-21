@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How we build a capability — Product Factory</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface2: #243044;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-dim: #388bfd33;
+      --success: #3fb950;
+      --border: #30363d;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; }
+    .header {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 12px 24px; display: flex; align-items: center; justify-content: space-between;
+    }
+    .logo { font-weight: 700; color: var(--accent); }
+    .back { color: var(--text-muted); text-decoration: none; font-size: 13px; }
+    .back:hover { color: var(--accent); }
+    main { max-width: 900px; margin: 0 auto; padding: 32px 24px; }
+    h1 { font-size: 1.5rem; margin: 0 0 8px 0; }
+    .cap-badge { display: inline-block; background: var(--accent-dim); color: var(--accent); padding: 6px 12px; border-radius: 8px; font-weight: 600; margin-bottom: 24px; }
+    .subtitle { color: var(--text-muted); margin-bottom: 32px; font-size: 13px; }
+
+    /* Timeline / stepper */
+    .timeline { position: relative; }
+    .stage-block {
+      display: flex; gap: 24px; margin-bottom: 0; padding: 20px 0;
+      border-left: 2px solid var(--border); margin-left: 11px; padding-left: 28px;
+      position: relative;
+    }
+    .stage-block:first-child { padding-top: 0; }
+    .stage-block:last-child { border-left-color: transparent; }
+    .stage-block::before {
+      content: ''; position: absolute; left: -2px; top: 24px;
+      width: 12px; height: 12px; border-radius: 50%;
+      background: var(--surface2); border: 2px solid var(--border);
+    }
+    .stage-block.done::before { background: var(--success); border-color: var(--success); }
+    .stage-block.current::before { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-dim); }
+
+    .stage-num { flex: 0 0 32px; font-size: 11px; color: var(--text-muted); font-weight: 600; }
+    .stage-body { flex: 1; min-width: 0; }
+    .stage-name { font-weight: 600; font-size: 1rem; margin-bottom: 6px; }
+    .stage-who { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+    .stage-context {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      padding: 12px 14px; font-size: 13px;
+    }
+    .stage-context .row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+    .stage-context .row:last-child { margin-bottom: 0; }
+    .stage-context .label { flex: 0 0 100px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+    .stage-context .value { flex: 1; }
+    .stage-context .value a { color: var(--accent); text-decoration: none; }
+    .stage-context .value a:hover { text-decoration: underline; }
+    .stage-context .value code { font-size: 12px; background: var(--bg); padding: 2px 6px; border-radius: 4px; }
+    .stage-context .open-in { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted); }
+    .stage-context .open-in a { color: var(--accent); text-decoration: none; margin-right: 10px; }
+    .stage-context .open-in a:hover { text-decoration: underline; }
+    .stage-output { margin-top: 10px; font-size: 12px; color: var(--success); }
+    .footer { text-align: center; padding: 24px; color: var(--text-muted); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <span class="logo">Product Factory</span>
+    <a href="product-factory-dashboard.html" class="back" id="backLink">← Pipeline</a>
+  </header>
+
+  <main>
+    <div class="cap-badge">PROJ-101 · Lead scoring API</div>
+    <h1>How we build a capability</h1>
+    <p class="subtitle">One capability moving through every stage. Context bundle at each step: tickets, docs, Slack — open in your tools. 7-day max · 24h ideal.</p>
+
+    <div class="timeline">
+      <div class="stage-block done">
+        <span class="stage-num">0</span>
+        <div class="stage-body">
+          <div class="stage-name">Triage</div>
+          <div class="stage-who">Anyone · on-demand</div>
+          <div class="stage-context">
+            <div class="row"><span class="label">Idea</span><span class="value">“We need lead scoring so sales can prioritize.”</span></div>
+            <div class="row"><span class="label">Output</span><span class="value">Capability ID <code>PROJ-101</code></span></div>
+            <div class="row"><span class="label">Ticket</span><span class="value"><a href="#">Issue #101</a></span></div>
+            <div class="open-in"><a href="#">Open in GitHub</a><a href="#">Open Slack #proj-101</a></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stage-block done">
+        <span class="stage-num">1</span>
+        <div class="stage-body">
+          <div class="stage-name">Product spec</div>
+          <div class="stage-who">PM (question-driven)</div>
+          <div class="stage-context">
+            <div class="row"><span class="label">Questions</span><span class="value">User, success criterion, scope, COGS, legal, release notes.</span></div>
+            <div class="row"><span class="label">Doc (Git)</span><span class="value"><a href="#">product-specs/PROJ-101.md</a></span></div>
+            <div class="row"><span class="label">Slack</span><span class="value"><a href="#">#proj-101</a></span></div>
+            <div class="open-in"><a href="#">Open in GitHub</a><a href="#">Open spec in Git</a><a href="#">Open Slack #proj-101</a></div>
+          </div>
+          <div class="stage-output">Output: Spec doc in Git</div>
+        </div>
+      </div>
+
+      <div class="stage-block done">
+        <span class="stage-num">2</span>
+        <div class="stage-body">
+          <div class="stage-name">Product spec approval</div>
+          <div class="stage-who">Product leaders + stakeholders (incl. legal/compliance if needed)</div>
+          <div class="stage-context">
+            <div class="row"><span class="label">Ticket</span><span class="value"><a href="#">Issue #101</a> · status: Spec approved</span></div>
+            <div class="row"><span class="label">Approved version</span><span class="value"><code>a1b2c3d</code> (Git commit)</span></div>
+            <div class="open-in"><a href="#">Open in GitHub</a><a href="#">Open spec in Git</a><a href="#">Open Slack #proj-101</a></div>
+          </div>
+          <div class="stage-output">Output: Approved spec → unlocks next stage</div>
+        </div>
+      </div>
+
+      <div class="stage-block done">
+        <span class="stage-num">3</span>
+        <div class="stage-body">
+          <div class="stage-name">Architecture review</div>
+          <div class="stage-who">Architect (+ engineers), context-aware</div>
+          <div class="stage-context">
+            <div class="row"><span class="label">Input</span><span class="value">Approved spec + current product architecture</span></div>
+            <div class="row"><span class="label">Doc (Git)</span><span class="value"><a href="#">docs/architecture/PROJ-101.md</a></span></div>
+            <div class="row"><span class="label">COGS</span><span class="value">$120/mo (set at this stage)</span></div>
+            <div class="row"><span class="label">Slack</span><span class="value"><a href="#">#proj-101</a></span></div>
+            <div class="open-in"><a href="#">Open in GitHub</a><a href="#">Open spec in Git</a><a href="#">Open Slack #proj-101</a></div>
+          </div>
+          <div class="stage-output">Output: Architecture doc in Git</div>
+        </div>
+      </div>
+
+      <div class="stage-block done">
+        <span class="stage-num">4</span>
+        <div class="stage-body">
+          <div class="stage-name">Architecture approval</div>
+          <div class="stage-who">Architecture leaders</div>
+          <div class="stage-context">
+            <div class="row"><span class="label">Ticket</span><span class="value"><a href="#">Issue #101</a> · status: Arch approved</span></div>
+            <div class="row"><span class="label">Approved version</span><span class="value"><code>c4d5e6f</code> (Git commit)</span></div>
+            <div class="open-in"><a href="#">Open in GitHub</a><a href="#">Open spec in Git</a><a href="#">Open Slack #proj-101</a></div>
+          </div>
+          <div class="stage-output">Output: Approved architecture → compliance gate</div>
+        </div>
+      </div>
+
+      <div class="stage-block done">
+        <span class="stage-num">5</span>
+        <div class="stage-body">
+          <div class="stage-name">Compliance gate</div>
+          <div class="stage-who">Legal / compliance (or designated reviewers)</div>
+          <div class="stage-context">
+            <div class="row"><span class="label">Ticket</span><span class="value"><a href="#">Issue #101</a> · status: Compliance approved</span></div>
+            <div class="row"><span class="label">Input</span><span class="value">Approved spec + approved architecture</span></div>
+            <div class="open-in"><a href="#">Open in GitHub</a><a href="#">Open spec in Git</a><a href="#">Open Slack #proj-101</a></div>
+          </div>
+          <div class="stage-output">Output: Compliance sign-off → build can start</div>
+        </div>
+      </div>
+
+      <div class="stage-block done">
+        <span class="stage-num">6</span>
+        <div class="stage-body">
+          <div class="stage-name">Software creation</div>
+          <div class="stage-who">Engineering + GenAI pipeline</div>
+          <div class="stage-context">
+            <div class="row"><span class="label">Input</span><span class="value">Approved spec + approved architecture → capability YAML → code</span></div>
+            <div class="row"><span class="label">Tickets</span><span class="value"><a href="#">#101</a> · <a href="#">PR !42</a> · <a href="#">PR !43</a></span></div>
+            <div class="row"><span class="label">Docs</span><span class="value">Spec + Arch (links on ticket)</span></div>
+            <div class="row"><span class="label">Slack</span><span class="value"><a href="#">#proj-101</a></span></div>
+            <div class="open-in"><a href="#">Open in GitHub</a><a href="#">Open spec in Git</a><a href="#">Open Slack #proj-101</a></div>
+            <div class="row" style="margin-top:10px;"><span class="label">Double-click</span><span class="value"><a href="how-we-build-software.html">How we build the software</a> (load context → spec→YAML → GenAI → PR → review → CI/CD)</span></div>
+          </div>
+          <div class="stage-output">Output: Code in repo, PRs linked to #101</div>
+        </div>
+      </div>
+
+      <div class="stage-block current">
+        <span class="stage-num">7</span>
+        <div class="stage-body">
+          <div class="stage-name">CI/CD to stage</div>
+          <div class="stage-who">CI/CD system</div>
+          <div class="stage-context">
+            <div class="row"><span class="label">Ticket</span><span class="value"><a href="#">#101</a> · status: In staging</span></div>
+            <div class="row"><span class="label">Deploy</span><span class="value"><a href="#">Staging env</a></span></div>
+            <div class="open-in"><a href="#">Open in GitHub</a><a href="#">Open Slack #proj-101</a></div>
+          </div>
+          <div class="stage-output">Output: Deployed to staging</div>
+        </div>
+      </div>
+
+      <div class="stage-block">
+        <span class="stage-num">8</span>
+        <div class="stage-body">
+          <div class="stage-name">UAT</div>
+          <div class="stage-who">Product manager + Engineer (both sign off via template; tracked as tickets)</div>
+          <div class="stage-context">
+            <div class="row"><span class="label">Sign-off ticket</span><span class="value"><a href="#">#101-uat</a></span></div>
+            <div class="row"><span class="label">Checklist</span><span class="value">PM ✓ · Eng ✓</span></div>
+            <div class="open-in"><a href="#">Open in GitHub</a><a href="#">Open Slack #proj-101</a></div>
+          </div>
+          <div class="stage-output">Output: UAT sign-off → release approval can run</div>
+        </div>
+      </div>
+
+      <div class="stage-block">
+        <span class="stage-num">9</span>
+        <div class="stage-body">
+          <div class="stage-name">Ship to prod</div>
+          <div class="stage-who">Release manager / authorized deployer</div>
+          <div class="stage-context">
+            <div class="row"><span class="label">Release ticket</span><span class="value"><a href="#">#101-rel</a></span></div>
+            <div class="row"><span class="label">Release notes</span><span class="value"><a href="#">docs/release-notes/</a></span></div>
+            <div class="row"><span class="label">External docs</span><span class="value">Customer-facing docs updated (from Product Factory scope)</span></div>
+            <div class="open-in"><a href="#">Open in GitHub</a><a href="#">Open Slack #proj-101</a></div>
+          </div>
+          <div class="stage-output">Output: Live in production</div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="footer">
+      One capability, full lifecycle · Context at every stage · Product Factory
+    </footer>
+  </main>
+  <script>
+    (function() {
+      var p = new URLSearchParams(window.location.search).get('product');
+      var back = document.getElementById('backLink');
+      if (back && p) back.href = 'product-factory-dashboard.html?product=' + encodeURIComponent(p);
+    })();
+  </script>
+</body>
+</html>

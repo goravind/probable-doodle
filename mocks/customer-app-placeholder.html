@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>App — Built by Product Factory</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f6f8fa;
+      --surface: #ffffff;
+      --sidebar: #1a2332;
+      --text: #1f2328;
+      --text-muted: #656d76;
+      --accent: #0969da;
+      --border: #d0d7de;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; }
+    .layout { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: 240px;
+      background: var(--sidebar);
+      color: #e6edf3;
+      padding: 20px 0;
+    }
+    .sidebar .brand { padding: 0 20px 20px; font-weight: 700; font-size: 1.1rem; color: #58a6ff; }
+    .sidebar nav a { display: block; padding: 10px 20px; color: #8b949e; text-decoration: none; }
+    .sidebar nav a:hover { color: #e6edf3; background: rgba(255,255,255,.06); }
+    .main { flex: 1; padding: 24px; }
+    .main h1 { font-size: 1.5rem; margin: 0 0 8px 0; }
+    .main .subtitle { color: var(--text-muted); margin-bottom: 24px; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 640px;
+    }
+    .card p { margin: 0 0 12px 0; color: var(--text-muted); line-height: 1.5; }
+    .card .note { font-size: 13px; color: var(--accent); margin-top: 16px; }
+    .placeholder-list { list-style: none; padding: 0; margin: 16px 0 0 0; }
+    .placeholder-list li { padding: 10px 0; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: 13px; }
+    .placeholder-list li:last-child { border-bottom: 0; }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">Your Product</div>
+      <nav>
+        <a href="#">Dashboard</a>
+        <a href="#">Contacts</a>
+        <a href="#">Deals</a>
+        <a href="#">Settings</a>
+      </nav>
+    </aside>
+    <main class="main">
+      <h1>Dashboard</h1>
+      <p class="subtitle">Customer-facing application (e.g. CRM, tools, marketplace). This is what Product Factory ships.</p>
+      <div class="card">
+        <p>This is a <strong>placeholder mock</strong> for the app you build. The real UI, backend, and agents are produced by the Product Factory pipeline (spec → approval → architecture → compliance → GenAI pipeline / eng → CI/CD → UAT → prod).</p>
+        <p>Use this as a shell: sidebar + main area. Replace with real screens (contacts list, deal pipeline, etc.) as capabilities ship.</p>
+        <p class="note">Same repo: mocks/product-factory-dashboard.html = internal factory; this file = customer-facing app concept.</p>
+        <ul class="placeholder-list">
+          <li>Contacts — (from capability PROJ-xxx)</li>
+          <li>Deals — (from capability PROJ-xxx)</li>
+          <li>Lead scoring — (from capability PROJ-101, 105)</li>
+        </ul>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
