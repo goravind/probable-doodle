@@ -1,0 +1,10 @@
+flowchart LR
+  WebClient[Web Client] --> UserExperienceUI[User Experience UI]
+  UserExperienceUI --> ApiGateway[API Gateway]
+  ApiGateway --> CapabilitySvc[Capability Service]
+  CapabilitySvc --> PolicySvc[Policy / Rules Service]
+  CapabilitySvc --> SearchSvc[Semantic Search Index]
+  CapabilitySvc --> Pg[(Postgres)]
+  UserExperienceUI --> Identity[Identity Provider]
+  CapabilitySvc --> Obs[Metrics + Audit Logs]
+  Obs --> OrgDash[Acme Health Admin Dashboard]
