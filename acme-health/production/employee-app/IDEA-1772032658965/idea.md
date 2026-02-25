@@ -1,24 +1,5 @@
-# Idea Submission
+# Idea Refinement
 
-## Title
-idea with ctx
-
-## Description
-x
-
-## User Persona
-
-
-## Business Goal
-
-
-## Problem Statement
-
-
-## Acceptance Criteria
-- none provided
-
-## Constraints
-
-
-## Non-goals
+- Problem: x
+- Persona: Organization admin
+- Business goal: Improve employee-app outcomes with measurable capability delivery.
