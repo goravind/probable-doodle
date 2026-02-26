@@ -1,26 +1,5 @@
-# Idea Submission
+# Idea Refinement
 
-## Title
-Semantic Profile
-
-## Description
-Build Semantic Profile
-
-## User Persona
-Product Manager
-
-## Business Goal
-Business value: high
-
-## Problem Statement
-Build Semantic Profile
-
-## Acceptance Criteria
-- - Define user outcome
-- - Define measurable KPI
-- - Validate release criteria
-
-## Constraints
-
-
-## Non-goals
+- Problem: Build Semantic Profile
+- Persona: Product Manager
+- Business goal: Business value: high
