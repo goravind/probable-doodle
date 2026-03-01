@@ -61,7 +61,12 @@ async function api(path, method = "GET", body = null, options = {}) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const err = new Error(payload.error || `API ${response.status}`);
+    const parts = [
+      payload.error || `API ${response.status}`,
+      payload.reason || null,
+      Array.isArray(payload.actions) && payload.actions.length ? `Actions: ${payload.actions.join(", ")}` : null
+    ].filter(Boolean);
+    const err = new Error(parts.join(" | "));
     err.payload = payload;
     err.status = response.status;
     throw err;
@@ -520,6 +525,7 @@ async function initIdea() {
   let latestArtifactMeta = null;
   let lastEnrichmentFailure = null;
   let lastPrFailure = null;
+  let lastPrFailureKind = "pr";
   let activeDrawerTab = "overview";
   let enrichmentLoading = false;
   let prCreationLoading = false;
@@ -883,23 +889,26 @@ async function initIdea() {
     enrichErrorBanner.style.display = "none";
   }
 
-  function showPrFailure(error) {
+  function showPrFailure(error, kind = "pr") {
     lastPrFailure = error;
+    lastPrFailureKind = kind === "approval" ? "approval" : "pr";
     if (!prErrorBanner || !prErrorText) return;
     const payload = error?.payload || {};
-    logClientEvent("ui.idea.pr.create.failed", {
+    logClientEvent(kind === "approval" ? "ui.idea.pr.approve.failed" : "ui.idea.pr.create.failed", {
       correlationId: payload?.correlationId || null,
       reason: errorReason(error)
     });
     const actionable = ideaStateHelper?.buildActionableError
-      ? ideaStateHelper.buildActionableError("pr", errorReason(error), payload?.correlationId || "")
+      ? ideaStateHelper.buildActionableError(kind === "approval" ? "approval" : "pr", errorReason(error), payload?.correlationId || "")
       : null;
-    prErrorText.textContent = actionable?.message || `PR creation failed: ${errorReason(error)}`;
+    prErrorText.textContent = actionable?.message
+      || `${kind === "approval" ? "PR approval failed" : "PR creation failed"}: ${errorReason(error)}`;
     prErrorBanner.style.display = "block";
   }
 
   function clearPrFailure() {
     lastPrFailure = null;
+    lastPrFailureKind = "pr";
     if (!prErrorBanner || !prErrorText) return;
     prErrorText.textContent = "";
     prErrorBanner.style.display = "none";
@@ -1618,8 +1627,12 @@ async function initIdea() {
   if (approveIdeaPr) {
     approveIdeaPr.onclick = async () => {
       try {
+        hideSuccess(prSuccessBanner);
+        clearPrFailure();
+        setPrLoading(true);
         const ctx = getCtx();
         if (!ctx.capabilityId) throw new Error("Submit idea first.");
+        const correlationId = makeCorrelationId("approve-pr");
         await runAiProgressFlow([
           { percent: 25, label: "Syncing triage docs to PR...", waitMs: 120 },
           { percent: 62, label: "Submitting approval...", waitMs: 120 },
@@ -1628,15 +1641,30 @@ async function initIdea() {
         const payload = await api(
           `/api/v1/factory/capabilities/${encodeURIComponent(ctx.capabilityId)}/stages/triage/approve`,
           "POST",
-          { note: "Approved from Product Factory UI" }
+          { note: "Approved from Product Factory UI" },
+          {
+            headers: {
+              "x-correlation-id": correlationId
+            }
+          }
         );
         output(payload);
         const detail = await refreshCapabilityGate().catch(() => null);
         if (detail?.capability?.stage) renderApprovedRendition(detail.capability.stage);
         setAiProgress(100, "Idea PR approved.");
-        show("Idea PR approved. Spec stage is unlocked.");
+        if (payload?.githubApproval?.mode === "local-self-approval-fallback") {
+          const note = "GitHub blocked self-approval; Product Factory recorded local approval and unlocked Spec.";
+          showSuccess(prSuccessBanner, note);
+          show(note);
+        } else {
+          showSuccess(prSuccessBanner, "Idea PR approved. Spec stage is unlocked.");
+          show("Idea PR approved. Spec stage is unlocked.");
+        }
       } catch (error) {
+        showPrFailure(error, "approval");
         show(error.message, true);
+      } finally {
+        setPrLoading(false);
       }
     };
   }
@@ -1709,7 +1737,12 @@ async function initIdea() {
   }
   if (prRetry && createIdea) {
     prRetry.onclick = () => {
+      const retryKind = lastPrFailureKind;
       clearPrFailure();
+      if (retryKind === "approval" && approveIdeaPr) {
+        approveIdeaPr.click();
+        return;
+      }
       createIdea.click();
     };
   }

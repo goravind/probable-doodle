@@ -43,4 +43,9 @@ test('buildActionableError returns enrichment and PR action sets', () => {
   assert.match(pr.message, /PR creation failed: bad credentials/);
   assert.ok(pr.actions.includes('Reconnect GitHub'));
   assert.ok(pr.actions.includes('Retry'));
+
+  const approval = buildActionableError('approval', 'self approval blocked', 'corr-456');
+  assert.match(approval.message, /PR approval failed: self approval blocked/);
+  assert.ok(approval.actions.includes('Open PR'));
+  assert.ok(approval.actions.includes('Retry'));
 });

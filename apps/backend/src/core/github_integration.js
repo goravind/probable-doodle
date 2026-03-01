@@ -3,7 +3,7 @@ const { hasGithubAppConfig, getInstallationAccessToken } = require("./github_app
 
 const GITHUB_API = "https://api.github.com";
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || "";
-const FACTORY_LOCAL_PR_ONLY = process.env.FACTORY_LOCAL_PR_ONLY !== "0";
+const FACTORY_LOCAL_PR_ONLY = String(process.env.FACTORY_LOCAL_PR_ONLY || "").trim() === "1";
 
 function nowIso() {
   return new Date().toISOString();
@@ -512,7 +512,19 @@ async function readGithubDocsByPrefix({
   }
 }
 
-async function approveGithubPullRequest({ repo, prNumber, body = "Approved by Product Factory workflow gate.", orgId = null }) {
+async function approveGithubPullRequest({
+  repo,
+  prNumber,
+  body = "Approved by Product Factory workflow gate.",
+  orgId = null,
+  correlationId = ""
+}) {
+  ghLog("github.pr.approve.start", {
+    repo,
+    prNumber,
+    orgId: orgId || null,
+    correlationId: correlationId || undefined
+  });
   const auth = await resolveGithubAuth({ orgId });
   if (!auth.token) {
     return {
@@ -520,7 +532,8 @@ async function approveGithubPullRequest({ repo, prNumber, body = "Approved by Pr
       repo,
       prNumber,
       state: "APPROVED",
-      url: null
+      url: null,
+      correlationId: correlationId || null
     };
   }
 
@@ -529,6 +542,7 @@ async function approveGithubPullRequest({ repo, prNumber, body = "Approved by Pr
   try {
     review = await githubRequest(`/repos/${owner}/${name}/pulls/${prNumber}/reviews`, auth.token, {
       method: "POST",
+      correlationId,
       body: JSON.stringify({
         event: "APPROVE",
         body
@@ -536,23 +550,41 @@ async function approveGithubPullRequest({ repo, prNumber, body = "Approved by Pr
     });
   } catch (error) {
     const message = String(error?.message || error || "GitHub approval failed");
+    const selfApprovalBlocked = /approve your own pull request|can not approve your own pull request/i.test(message);
+    ghLog("github.pr.approve.failed", {
+      repo,
+      prNumber,
+      correlationId: correlationId || undefined,
+      selfApprovalBlocked,
+      error: message
+    });
     return {
       mode: "github-error",
       repo,
       prNumber,
-      state: "APPROVAL_FAILED",
+      state: selfApprovalBlocked ? "SELF_APPROVAL_BLOCKED" : "APPROVAL_FAILED",
       url: null,
       error: message,
-      nonFatal: true
+      nonFatal: selfApprovalBlocked,
+      selfApprovalBlocked,
+      correlationId: correlationId || null
     };
   }
 
+  ghLog("github.pr.approve.success", {
+    repo,
+    prNumber,
+    state: review.state,
+    url: review.html_url || null,
+    correlationId: correlationId || undefined
+  });
   return {
     mode: "github",
     repo,
     prNumber,
     state: review.state,
-    url: review.html_url || null
+    url: review.html_url || null,
+    correlationId: correlationId || null
   };
 }
 

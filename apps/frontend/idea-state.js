@@ -31,6 +31,12 @@
   function buildActionableError(kind, reason, correlationId = "") {
     const errorReason = String(reason || "Unknown failure").trim();
     const suffix = correlationId ? ` (correlationId=${correlationId})` : "";
+    if (kind === "approval") {
+      return {
+        message: `PR approval failed: ${errorReason}${suffix}`,
+        actions: ["Open PR", "Retry", "Reconnect GitHub"]
+      };
+    }
     if (kind === "pr") {
       return {
         message: `PR creation failed: ${errorReason}${suffix}`,

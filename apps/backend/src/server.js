@@ -19,14 +19,32 @@ function loadLocalEnvFile() {
   for (const envPath of candidates) {
     if (!fs.existsSync(envPath)) continue;
     const lines = fs.readFileSync(envPath, "utf8").split("\n");
-    for (const line of lines) {
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith("#")) continue;
-      const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+      const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
       if (!match) continue;
       const key = match[1];
       if (process.env[key] != null && String(process.env[key]).length > 0) continue;
-      process.env[key] = parseEnvValue(match[2]);
+      let value = String(match[2] || "");
+      const trimmedValue = value.trimStart();
+      const quote = trimmedValue.startsWith("\"")
+        ? "\""
+        : trimmedValue.startsWith("'")
+          ? "'"
+          : "";
+      if (quote) {
+        const hasClosingQuote = trimmedValue.length > 1 && trimmedValue.endsWith(quote);
+        if (!hasClosingQuote) {
+          while (index + 1 < lines.length) {
+            index += 1;
+            value += `\n${lines[index]}`;
+            if (String(lines[index] || "").trimEnd().endsWith(quote)) break;
+          }
+        }
+      }
+      process.env[key] = parseEnvValue(value);
     }
     return;
   }
@@ -1062,16 +1080,97 @@ async function handleApi(req, res, url, metrics, identity, requestMeta = {}) {
       json(res, 400, { error: "Invalid JSON body" });
       return "api.factory.idea.run_to_pr.invalid";
     }
-
-    const result = await runIdeaToPr({
+    const enforceGithubPr = payload.enforceGithubPr === true;
+    const readiness = evaluateIdeaReadiness(idea);
+    if (!readiness.ready) {
+      json(res, 422, {
+        error: "Idea artifact is not ready for PR creation",
+        reason: `Missing required sections: ${readiness.gaps.join(", ")}`,
+        correlationId,
+        idea,
+        actions: ["continue-enrichment", "retry-submit-idea"]
+      });
+      return "api.factory.idea.run_to_pr.readiness_blocked";
+    }
+    logEvent("idea.run_to_pr.start", {
+      correlationId,
+      actor: identity.userId,
       ideaId,
-      capabilityTitle: payload.capabilityTitle,
-      actor: identity.userId
+      enforceGithubPr
     });
+
+    let result = null;
+    try {
+      result = await runIdeaToPr({
+        ideaId,
+        capabilityTitle: payload.capabilityTitle,
+        actor: identity.userId,
+        enforceGithubPr,
+        correlationId
+      });
+    } catch (error) {
+      const reason = String(error?.message || error || "run_to_pr_exception");
+      logEvent("idea.run_to_pr.exception", {
+        correlationId,
+        actor: identity.userId,
+        ideaId,
+        reason
+      });
+      json(res, 502, {
+        error: "PR creation failed",
+        reason,
+        correlationId,
+        idea,
+        actions: ["retry-submit-idea", "open-factory-config", "reconnect-github"]
+      });
+      return "api.factory.idea.run_to_pr.exception";
+    }
     if (result.error) {
-      json(res, 400, { error: result.error });
+      const reason = String(result.reason || result.error || "run_to_pr_failed");
+      logEvent("idea.run_to_pr.failed", {
+        correlationId,
+        actor: identity.userId,
+        ideaId,
+        reason
+      });
+      json(res, 502, {
+        error: "PR creation failed",
+        reason,
+        correlationId,
+        idea,
+        actions: Array.isArray(result.actions) && result.actions.length
+          ? result.actions
+          : ["retry-submit-idea", "open-factory-config", "reconnect-github"]
+      });
       return "api.factory.idea.run_to_pr.error";
     }
+    if (enforceGithubPr && (!result?.pr?.externalUrl || !result?.pr?.prNumber)) {
+      const reason = "GitHub PR URL/number missing from run-to-pr result.";
+      logEvent("idea.run_to_pr.missing_github_url", {
+        correlationId,
+        actor: identity.userId,
+        ideaId,
+        capabilityId: result?.capability?.capabilityId || null
+      });
+      json(res, 502, {
+        error: "PR creation failed",
+        reason,
+        correlationId,
+        idea,
+        actions: ["retry-submit-idea", "open-factory-config", "reconnect-github"]
+      });
+      return "api.factory.idea.run_to_pr.missing_github_url";
+    }
+    logEvent("idea.run_to_pr.success", {
+      correlationId,
+      actor: identity.userId,
+      ideaId,
+      capabilityId: result?.capability?.capabilityId || null,
+      prId: result?.pr?.prId || null,
+      prNumber: result?.pr?.prNumber || null,
+      prUrl: result?.pr?.externalUrl || result?.prUrl || null
+    });
+    result.correlationId = correlationId;
     json(res, 200, result);
     return "api.factory.idea.run_to_pr";
   }
@@ -1303,9 +1402,19 @@ async function handleApi(req, res, url, metrics, identity, requestMeta = {}) {
       });
       return "api.connectors.github.installations.missing_config";
     }
-    const installations = await listAppInstallations();
-    json(res, 200, { installations });
-    return "api.connectors.github.installations";
+    try {
+      const installations = await listAppInstallations();
+      json(res, 200, { installations });
+      return "api.connectors.github.installations";
+    } catch (error) {
+      const reason = String(error?.message || error || "github_installations_failed");
+      json(res, 502, {
+        error: "Unable to list GitHub App installations",
+        reason,
+        actions: ["fix-github-app-key", "retry-refresh-installations"]
+      });
+      return "api.connectors.github.installations.error";
+    }
   }
 
   if (pathname === "/api/v1/connectors/github/link-installation" && req.method === "POST") {
@@ -1910,16 +2019,49 @@ async function handleApi(req, res, url, metrics, identity, requestMeta = {}) {
       return "api.factory.stage_approve.invalid";
     }
 
+    logEvent("stage.approve.request.start", {
+      correlationId,
+      actor: identity.userId,
+      capabilityId,
+      stageKey
+    });
     const result = await approveStageWithGithub({
       capabilityId,
       stageKey,
       actor: identity.userId,
-      note: payload.note || ""
+      note: payload.note || "",
+      correlationId
     });
     if (result.error) {
-      json(res, 400, { error: result.error });
+      const reason = String(result.reason || result?.githubApproval?.error || result.error || "stage_approval_failed");
+      const actions = Array.isArray(result.actions) && result.actions.length
+        ? result.actions
+        : ["retry-approve-stage", "open-pr", "reconnect-github"];
+      logEvent("stage.approve.request.failed", {
+        correlationId,
+        actor: identity.userId,
+        capabilityId,
+        stageKey,
+        reason
+      });
+      json(res, 400, {
+        error: result.error,
+        reason,
+        actions,
+        correlationId,
+        githubApproval: result.githubApproval || null
+      });
       return "api.factory.stage_approve.error";
     }
+    logEvent("stage.approve.request.success", {
+      correlationId,
+      actor: identity.userId,
+      capabilityId,
+      stageKey,
+      nextStage: result?.capability?.stage || null,
+      approvalMode: result?.githubApproval?.mode || null
+    });
+    result.correlationId = correlationId;
     json(res, 200, result);
     return "api.factory.stage_approve";
   }
@@ -1984,13 +2126,104 @@ async function handleApi(req, res, url, metrics, identity, requestMeta = {}) {
     return "api.factory.idea.triage";
   }
 
+  const factoryCapabilityBuildToPrMatch = pathname.match(/^\/api\/v1\/factory\/capabilities\/(CAP-[0-9]+)\/build-to-pr$/);
+  if (factoryCapabilityBuildToPrMatch && req.method === "POST") {
+    if (!requireRoles(identity, ["organization_admin", "platform_admin"])) {
+      forbidden(res, "Admin role required");
+      return "api.factory.capability.build_to_pr.forbidden";
+    }
+    const capabilityId = factoryCapabilityBuildToPrMatch[1];
+    let payload = {};
+    try {
+      payload = JSON.parse((await readBody(req)) || "{}");
+    } catch {
+      json(res, 400, { error: "Invalid JSON body" });
+      return "api.factory.capability.build_to_pr.invalid";
+    }
+    const enforceGithubPr = payload.enforceGithubPr === true;
+    logEvent("capability.build_to_pr.start", {
+      correlationId,
+      actor: identity.userId,
+      capabilityId,
+      enforceGithubPr
+    });
+    let result = null;
+    try {
+      result = await buildToPr({
+        capabilityId,
+        actor: identity.userId,
+        enforceGithubPr,
+        correlationId
+      });
+    } catch (error) {
+      const reason = String(error?.message || error || "build_to_pr_exception");
+      logEvent("capability.build_to_pr.exception", {
+        correlationId,
+        actor: identity.userId,
+        capabilityId,
+        reason
+      });
+      json(res, 502, {
+        error: "PR creation failed",
+        reason,
+        correlationId,
+        actions: ["retry-create-pr", "open-factory-config", "reconnect-github"]
+      });
+      return "api.factory.capability.build_to_pr.exception";
+    }
+    if (result.error) {
+      const reason = String(result.reason || result.error || "build_to_pr_failed");
+      logEvent("capability.build_to_pr.failed", {
+        correlationId,
+        actor: identity.userId,
+        capabilityId,
+        reason
+      });
+      json(res, 502, {
+        error: "PR creation failed",
+        reason,
+        correlationId,
+        actions: Array.isArray(result.actions) && result.actions.length
+          ? result.actions
+          : ["retry-create-pr", "open-factory-config", "reconnect-github"]
+      });
+      return "api.factory.capability.build_to_pr.error";
+    }
+    if (enforceGithubPr && (!result?.pr?.externalUrl || !result?.pr?.prNumber)) {
+      const reason = "GitHub PR URL/number missing from build-to-pr result.";
+      logEvent("capability.build_to_pr.missing_github_url", {
+        correlationId,
+        actor: identity.userId,
+        capabilityId,
+        prId: result?.pr?.prId || null
+      });
+      json(res, 502, {
+        error: "PR creation failed",
+        reason,
+        correlationId,
+        actions: ["retry-create-pr", "open-factory-config", "reconnect-github"]
+      });
+      return "api.factory.capability.build_to_pr.missing_github_url";
+    }
+    logEvent("capability.build_to_pr.success", {
+      correlationId,
+      actor: identity.userId,
+      capabilityId,
+      prId: result?.pr?.prId || null,
+      prNumber: result?.pr?.prNumber || null,
+      prUrl: result?.pr?.externalUrl || result?.prUrl || null
+    });
+    result.correlationId = correlationId;
+    json(res, 200, result);
+    return "api.factory.capability.build_to_pr";
+  }
+
   const stageMap = [
     { regex: /^\/api\/v1\/factory\/capabilities\/(CAP-[0-9]+)\/spec$/, fn: writeSpec, key: "spec" },
     { regex: /^\/api\/v1\/factory\/capabilities\/(CAP-[0-9]+)\/approve-spec$/, fn: approveSpec, key: "approve_spec" },
     { regex: /^\/api\/v1\/factory\/capabilities\/(CAP-[0-9]+)\/architecture$/, fn: writeArchitecture, key: "architecture" },
     { regex: /^\/api\/v1\/factory\/capabilities\/(CAP-[0-9]+)\/approve-architecture$/, fn: approveArchitecture, key: "approve_architecture" },
-    { regex: /^\/api\/v1\/factory\/capabilities\/(CAP-[0-9]+)\/compliance$/, fn: runCompliance, key: "compliance" },
-    { regex: /^\/api\/v1\/factory\/capabilities\/(CAP-[0-9]+)\/build-to-pr$/, fn: buildToPr, key: "build_to_pr" }
+    { regex: /^\/api\/v1\/factory\/capabilities\/(CAP-[0-9]+)\/compliance$/, fn: runCompliance, key: "compliance" }
   ];
 
   for (const stageAction of stageMap) {
