@@ -1,0 +1,17 @@
+{
+  "name": "probable-toodle",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Probable Toodle Product Factory system backbone",
+  "scripts": {
+    "dev": "node apps/backend/src/server.js",
+    "start": "node apps/backend/src/server.js",
+    "test": "node --test apps/backend/test/api.test.js apps/frontend/test/idea-state.test.js apps/frontend/test/idea-view-model.test.js apps/frontend/test/ui-components.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "pg": "^8.13.3"
+  }
+}

@@ -42,36 +42,51 @@
         <div class="stage-item active">
           <span class="n">1</span>
           <div>
-            <div class="t">Idea Builder</div>
-            <div class="s">Draft</div>
+            <div class="stage-title-row">
+              <div class="t">Idea Builder</div>
+              <span class="stage-status active">Draft</span>
+            </div>
+            <div class="s">Player One</div>
           </div>
         </div>
         <div class="stage-item">
           <span class="n">2</span>
           <div>
-            <div class="t">Spec</div>
-            <div class="s">Locked</div>
+            <div class="stage-title-row">
+              <div class="t">Spec</div>
+              <span class="stage-status">Triage</span>
+            </div>
+            <div class="s">Player Two</div>
           </div>
         </div>
         <div class="stage-item">
           <span class="n">3</span>
           <div>
-            <div class="t">Build PR</div>
-            <div class="s">Locked</div>
+            <div class="stage-title-row">
+              <div class="t">Build PR</div>
+              <span class="stage-status">Triage</span>
+            </div>
+            <div class="s">Player One</div>
           </div>
         </div>
         <div class="stage-item">
           <span class="n">4</span>
           <div>
-            <div class="t">Review Gate</div>
-            <div class="s">Pending</div>
+            <div class="stage-title-row">
+              <div class="t">Review Gate</div>
+              <span class="stage-status muted">None</span>
+            </div>
+            <div class="s">None</div>
           </div>
         </div>
         <div class="stage-item">
           <span class="n">5</span>
           <div>
-            <div class="t">Release</div>
-            <div class="s">Pending</div>
+            <div class="stage-title-row">
+              <div class="t">Release</div>
+              <span class="stage-status muted">None</span>
+            </div>
+            <div class="s">None Prime</div>
           </div>
         </div>
       </aside>
@@ -86,6 +101,7 @@
               <span class="chip">Multimodal</span>
             </div>
           </div>
+          <div id="ideaContextBadge" class="idea-context-badge">Context focus: loading current ideas...</div>
           <div id="enrichChatMessages" class="chat-log idea-chat-log studio-chat-log"></div>
         </article>
 
@@ -93,6 +109,10 @@
           <div class="idea-draft-head">
             <h2>AI Draft</h2>
             <span id="ideaDraftSource" class="chip muted">No draft</span>
+          </div>
+          <div class="idea-summary-row">
+            <p id="enrichSummaryLine" class="mini">No enrichment yet.</p>
+            <button id="viewFullIdea" class="ghost" type="button" disabled>View Full Idea</button>
           </div>
           <div id="ideaDraftSummary" class="idea-draft-summary">
             <div class="idea-draft-summary-title">AI draft will appear here.</div>
@@ -106,16 +126,29 @@
 
         <article class="card idea-composer-card">
           <div id="enrichChatImagePreview" class="chat-image-preview"></div>
-          <textarea id="enrichChatInput" rows="3" placeholder="Describe the idea, constraints, outcomes, and attach images or diagrams..."></textarea>
+          <textarea id="enrichChatInput" rows="3" placeholder="Describe the idea, constraints, outcomes, and attach images or diagrams..." aria-label="Idea enrichment input"></textarea>
           <div class="hint">
             <div id="aiProgressLabel">AI generation idle.</div>
             <div class="progress-shell"><div id="aiProgressBar" class="progress-bar"></div></div>
           </div>
+          <div id="enrichLoadingSkeleton" class="loading-skeleton-stack" style="display:none;" aria-hidden="true">
+            <div class="loading-skeleton line w-80"></div>
+            <div class="loading-skeleton line w-100"></div>
+            <div class="loading-skeleton line w-60"></div>
+          </div>
           <div class="row">
             <label class="btn-link" for="enrichChatImages">Attach Images</label>
-            <input id="enrichChatImages" type="file" accept="image/*" multiple style="display:none;" />
-            <button id="enrichChatSend" type="button">Send</button>
-            <button id="createIdea" type="button">Submit Idea</button>
+            <input id="enrichChatImages" type="file" accept="image/*" multiple style="display:none;" aria-label="Attach images for enrichment context" />
+            <button id="enrichChatSend" type="button" aria-label="Send enrichment message">Send</button>
+            <button id="createIdea" type="button" aria-label="Submit idea and create PR">Submit Idea</button>
+          </div>
+          <div id="enrichSuccessBanner" class="action-success" style="display:none;" role="status" aria-live="polite"></div>
+          <div id="enrichErrorBanner" class="action-error" style="display:none;" role="alert" aria-live="assertive">
+            <div id="enrichErrorText" class="text"></div>
+            <div class="actions">
+              <button id="enrichRetry" class="ghost" type="button">Retry</button>
+              <button id="enrichViewLogs" class="ghost" type="button">View Logs</button>
+            </div>
           </div>
         </article>
 
@@ -149,10 +182,28 @@
         </article>
 
         <article class="card right-card">
+          <h2>Current Ideas Context</h2>
+          <p id="currentIdeasContextMeta" class="mini">Loading current ideas context...</p>
+          <div id="currentIdeasContextList" class="current-ideas-context-list"></div>
+        </article>
+
+        <article class="card right-card">
           <h2>PR Gate</h2>
           <div id="ideaPrStatus" class="data-item">
             <div class="t">PR gate pending</div>
             <div class="s">Submit idea to open PR for approval.</div>
+          </div>
+          <div id="prLoadingSkeleton" class="loading-skeleton-stack" style="display:none;" aria-hidden="true">
+            <div class="loading-skeleton line w-70"></div>
+            <div class="loading-skeleton line w-90"></div>
+          </div>
+          <div id="prSuccessBanner" class="action-success" style="display:none; margin-top:10px;" role="status" aria-live="polite"></div>
+          <div id="prErrorBanner" class="action-error" style="display:none; margin-top:10px;" role="alert" aria-live="assertive">
+            <div id="prErrorText" class="text"></div>
+            <div class="actions">
+              <button id="prReconnect" class="ghost" type="button">Reconnect GitHub</button>
+              <button id="prRetry" class="ghost" type="button">Retry</button>
+            </div>
           </div>
           <div class="row" style="margin-top:10px;">
             <button class="ghost" id="approveIdeaPr" disabled>Approve Idea PR</button>
@@ -178,6 +229,29 @@
     </div>
   </dialog>
 
+  <div id="ideaDrawerBackdrop" class="idea-drawer-backdrop" hidden></div>
+  <aside id="ideaDrawer" class="idea-drawer" aria-hidden="true">
+    <header class="idea-drawer-head">
+      <div>
+        <p class="kicker">Idea Artifact</p>
+        <h2 id="ideaDrawerTitle">Full Idea</h2>
+      </div>
+      <button id="ideaDrawerClose" class="ghost" type="button" aria-label="Close full idea drawer">Close</button>
+    </header>
+    <nav class="idea-drawer-tabs" aria-label="Idea sections">
+      <button type="button" data-tab="overview" class="active">Overview</button>
+      <button type="button" data-tab="scope">Scope &amp; Non-Goals</button>
+      <button type="button" data-tab="personas">Personas</button>
+      <button type="button" data-tab="architecture">Architecture</button>
+      <button type="button" data-tab="criteria">Acceptance Criteria</button>
+      <button type="button" data-tab="audit">Audit Trail</button>
+    </nav>
+    <section id="ideaDrawerBody" class="idea-drawer-body"></section>
+  </aside>
+
+  <script src="/idea-state.js"></script>
+  <script src="/idea-view-model.js"></script>
+  <script src="/ui-components.js"></script>
   <script src="/pipeline-stage.js"></script>
 </body>
 </html>
