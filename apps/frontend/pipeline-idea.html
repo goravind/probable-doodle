@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Pipeline · Idea</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="/enterprise.css"/>
+</head>
+<body class="enterprise pipeline-board-page idea-studio-page" data-stage="idea">
+  <header class="topbar">
+    <div class="brand"><span class="brand-badge">Factory</span> Product Factory</div>
+    <div class="topbar-right">
+      <span id="crumb" class="user-pill">-</span>
+      <span id="userEmail" class="user-pill">-</span>
+      <a href="#" data-action="signout" class="signout-btn">Sign out</a>
+    </div>
+  </header>
+
+  <main class="idea-studio-shell">
+    <section class="idea-studio-top">
+      <div>
+        <p class="kicker">Pipeline</p>
+        <h1>Pipeline - Idea</h1>
+        <div id="scopePill" class="scope-pill">-</div>
+      </div>
+      <div class="idea-top-actions">
+        <select aria-label="Mode">
+          <option>Review mode</option>
+          <option>Authoring mode</option>
+        </select>
+      </div>
+    </section>
+
+    <div id="alert" class="alert">Describe idea intent in chat, refine with AI, and submit PR for approval.</div>
+
+    <section class="idea-studio-grid">
+      <aside class="idea-stage-rail">
+        <h2>Pipeline Stages</h2>
+        <div class="stage-item active">
+          <span class="n">1</span>
+          <div>
+            <div class="t">Idea Builder</div>
+            <div class="s">Draft</div>
+          </div>
+        </div>
+        <div class="stage-item">
+          <span class="n">2</span>
+          <div>
+            <div class="t">Spec</div>
+            <div class="s">Locked</div>
+          </div>
+        </div>
+        <div class="stage-item">
+          <span class="n">3</span>
+          <div>
+            <div class="t">Build PR</div>
+            <div class="s">Locked</div>
+          </div>
+        </div>
+        <div class="stage-item">
+          <span class="n">4</span>
+          <div>
+            <div class="t">Review Gate</div>
+            <div class="s">Pending</div>
+          </div>
+        </div>
+        <div class="stage-item">
+          <span class="n">5</span>
+          <div>
+            <div class="t">Release</div>
+            <div class="s">Pending</div>
+          </div>
+        </div>
+      </aside>
+
+      <section class="idea-center-column">
+        <article class="card idea-conversation-card">
+          <div class="idea-conversation-head">
+            <h2>Idea Conversation</h2>
+            <div class="idea-filter-row">
+              <span class="chip">All</span>
+              <span class="chip">Triage</span>
+              <span class="chip">Multimodal</span>
+            </div>
+          </div>
+          <div id="enrichChatMessages" class="chat-log idea-chat-log studio-chat-log"></div>
+        </article>
+
+        <article class="card idea-draft-card">
+          <div class="idea-draft-head">
+            <h2>AI Draft</h2>
+            <span id="ideaDraftSource" class="chip muted">No draft</span>
+          </div>
+          <div id="ideaDraftSummary" class="idea-draft-summary">
+            <div class="idea-draft-summary-title">AI draft will appear here.</div>
+            <p class="idea-draft-summary-text">Send a message to generate an enriched draft from product and idea context.</p>
+          </div>
+          <details id="ideaDraftDetails" class="idea-draft-details">
+            <summary>View Full Draft</summary>
+            <div id="ideaSuggestions" class="llm-feedback">AI enrichment output appears here as you chat.</div>
+          </details>
+        </article>
+
+        <article class="card idea-composer-card">
+          <div id="enrichChatImagePreview" class="chat-image-preview"></div>
+          <textarea id="enrichChatInput" rows="3" placeholder="Describe the idea, constraints, outcomes, and attach images or diagrams..."></textarea>
+          <div class="hint">
+            <div id="aiProgressLabel">AI generation idle.</div>
+            <div class="progress-shell"><div id="aiProgressBar" class="progress-bar"></div></div>
+          </div>
+          <div class="row">
+            <label class="btn-link" for="enrichChatImages">Attach Images</label>
+            <input id="enrichChatImages" type="file" accept="image/*" multiple style="display:none;" />
+            <button id="enrichChatSend" type="button">Send</button>
+            <button id="createIdea" type="button">Submit Idea</button>
+          </div>
+        </article>
+
+        <article class="card" id="fullIdeaRenditionCard" style="display:none;">
+          <h2>Approved Idea</h2>
+          <div id="fullIdeaRendition" class="llm-feedback"></div>
+        </article>
+      </section>
+
+      <aside class="idea-right-column">
+        <article class="decision-panel">
+          <h2>Decision Panel</h2>
+          <div class="decision-score-row">
+            <span>Readiness Score</span>
+            <strong id="decisionReadiness">--</strong>
+          </div>
+          <ul class="decision-metrics">
+            <li><span>Completeness</span><strong id="decisionCompleteness">--</strong></li>
+            <li><span>Risks</span><strong id="decisionRisks">--</strong></li>
+            <li><span>Testability</span><strong id="decisionTestability">--</strong></li>
+            <li><span>Scope</span><strong id="decisionScope">--</strong></li>
+            <li><span>Dependencies</span><strong id="decisionDependencies">--</strong></li>
+          </ul>
+        </article>
+
+        <article class="card right-card">
+          <h2>Top Suggestion</h2>
+          <p id="decisionTopSuggestion" class="suggestion-line">AI will suggest improvements after your first message.</p>
+          <h2 style="margin-top:12px;">Primary Risk</h2>
+          <p id="decisionPrimaryRisk" class="risk-line">No primary risk identified yet.</p>
+        </article>
+
+        <article class="card right-card">
+          <h2>PR Gate</h2>
+          <div id="ideaPrStatus" class="data-item">
+            <div class="t">PR gate pending</div>
+            <div class="s">Submit idea to open PR for approval.</div>
+          </div>
+          <div class="row" style="margin-top:10px;">
+            <button class="ghost" id="approveIdeaPr" disabled>Approve Idea PR</button>
+            <button class="ghost" id="continueSpec" disabled>Continue to Spec</button>
+          </div>
+        </article>
+      </aside>
+    </section>
+
+    <input id="ideaHeadline" type="hidden" />
+    <textarea id="ideaDescription" style="display:none;"></textarea>
+  </main>
+
+  <dialog id="ideaPrDialog" class="pr-dialog">
+    <div class="pr-dialog-content">
+      <h3>PR Submitted</h3>
+      <p>Your idea PR was created and is waiting for human approval.</p>
+      <div id="ideaPrDialogMeta" class="mini"></div>
+      <div class="row" style="margin-top:12px;">
+        <a id="ideaPrDialogOpenPr" class="btn-link" href="#" target="_blank" rel="noreferrer" style="display:none;">Open PR</a>
+        <button id="ideaPrDialogClose" class="ghost" type="button">Close</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="/pipeline-stage.js"></script>
+</body>
+</html>
