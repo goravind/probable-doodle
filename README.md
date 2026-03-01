@@ -81,6 +81,7 @@ If PR creation fails in Idea Builder, the UI now shows an actionable error with:
 - exact reason text
 - correlation ID
 - **Reconnect GitHub** and **Retry** actions
+- and enforced GitHub PR mode from Idea screen (`enforceGithubPr=true`) to prevent silent draft-only success
 
 ### AI enrichment local runbook
 
@@ -100,6 +101,18 @@ Behavior:
 If enrichment fails, Idea Builder now shows:
 - `Enrichment failed: <reason> (correlationId=...)`
 - **Retry** and **View logs**
+
+Related ideas retrieval endpoint:
+
+```bash
+curl -H "x-user-id: ava-admin" \
+  "http://localhost:8080/api/ideas/similar?orgId=acme-health&sandboxId=production&productArea=crm&query=semantic%20profile&limit=6"
+```
+
+Behavior:
+- returns ranked `ideas[]` and optional `duplicateWarning`
+- supports fork/provenance in Idea UI (`details.metadata.sourceIdeas`)
+- enrichment accepts `relatedIdeasContext` and records usage in `draft.conversationContextUsed`
 
 ### Enterprise UI system (Idea Builder)
 

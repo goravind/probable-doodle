@@ -92,6 +92,7 @@ const {
 } = require("./core/orchestrator");
 const {
   createIdea,
+  findSimilarIdeas,
   generateIdeaDraft,
   suggestIdeas,
   aiAssistIdea,
@@ -276,6 +277,24 @@ function buildIdeaAssistantReply(draft, latestUserMessage = "", imageCount = 0, 
   if (criteria.length) lines.push(`Acceptance criteria count: ${criteria.length}`);
   lines.push("Continue refining or submit the idea to open a PR.");
   return lines.join("\n");
+}
+
+function evaluateIdeaReadiness(idea = null) {
+  const details = idea?.details && typeof idea.details === "object" ? idea.details : {};
+  const gaps = [];
+  if (!String(idea?.title || "").trim()) gaps.push("title");
+  if (!String(idea?.description || "").trim()) gaps.push("description");
+  if (!String(details.problemStatement || "").trim()) gaps.push("problemStatement");
+  if (!String(details.userPersona || "").trim()) gaps.push("userPersona");
+  if (!String(details.businessGoal || "").trim()) gaps.push("businessGoal");
+  const acceptance = Array.isArray(details.acceptanceCriteria)
+    ? details.acceptanceCriteria.filter((item) => String(item || "").trim())
+    : [];
+  if (!acceptance.length) gaps.push("acceptanceCriteria");
+  return {
+    ready: gaps.length === 0,
+    gaps
+  };
 }
 
 function getOrgProductivity(org) {
@@ -539,6 +558,33 @@ async function handleApi(req, res, url, metrics, identity, requestMeta = {}) {
     return "api.factory.ideas.list";
   }
 
+  if ((pathname === "/api/ideas/similar" || pathname === "/api/v1/factory/ideas/similar") && req.method === "GET") {
+    const orgId = url.searchParams.get("orgId") || "";
+    const sandboxId = url.searchParams.get("sandboxId") || "";
+    const productId = url.searchParams.get("productId") || url.searchParams.get("productArea") || "";
+    const query = url.searchParams.get("query") || "";
+    const limit = Number(url.searchParams.get("limit") || "6");
+    const excludeIdeaId = url.searchParams.get("excludeIdeaId") || "";
+    if (!orgId || !sandboxId || !productId) {
+      json(res, 400, { error: "orgId, sandboxId and productArea (or productId) are required" });
+      return "api.factory.ideas.similar.invalid";
+    }
+    if (!canAccessSandbox(identity, orgId, sandboxId)) {
+      forbidden(res, "No sandbox access");
+      return "api.factory.ideas.similar.scope_forbidden";
+    }
+    const payload = await findSimilarIdeas({
+      orgId,
+      sandboxId,
+      productId,
+      query,
+      limit,
+      excludeIdeaId
+    });
+    json(res, 200, payload);
+    return "api.factory.ideas.similar";
+  }
+
   if (pathname === "/api/v1/factory/ideas" && req.method === "POST") {
     if (!requireRoles(identity, ["organization_admin", "platform_admin"])) {
       forbidden(res, "Admin role required");
@@ -595,7 +641,8 @@ async function handleApi(req, res, url, metrics, identity, requestMeta = {}) {
       orgId: payload.orgId,
       sandboxId: payload.sandboxId,
       productId: payload.productId,
-      autoPipeline: payload.autoPipeline !== false
+      autoPipeline: payload.autoPipeline !== false,
+      enforceGithubPr: payload.enforceGithubPr === true
     });
 
     const result = await createIdea({
@@ -614,9 +661,21 @@ async function handleApi(req, res, url, metrics, identity, requestMeta = {}) {
       source: result?.generation?.source || "unknown"
     });
     const autoPipeline = payload.autoPipeline !== false;
+    const enforceGithubPr = payload.enforceGithubPr === true;
     if (!autoPipeline) {
       json(res, 200, { ...result, autoPipeline: "disabled", correlationId });
       return "api.factory.ideas.create";
+    }
+    const readiness = evaluateIdeaReadiness(result.idea);
+    if (!readiness.ready) {
+      json(res, 422, {
+        error: "Idea artifact is not ready for PR creation",
+        reason: `Missing required sections: ${readiness.gaps.join(", ")}`,
+        correlationId,
+        idea: result.idea,
+        actions: ["continue-enrichment", "retry-submit-idea"]
+      });
+      return "api.factory.ideas.create.readiness_blocked";
     }
 
     let triagePr = null;
@@ -628,7 +687,9 @@ async function handleApi(req, res, url, metrics, identity, requestMeta = {}) {
       triagePr = await createTriagePrFromIdea({
         ideaId: result.idea.ideaId,
         capabilityTitle: payload.capabilityTitle || `${result.idea.title} capability`,
-        actor: identity.userId
+        actor: identity.userId,
+        enforceGithubPr,
+        correlationId
       });
     } catch (error) {
       const reason = String(error?.message || error || "triage_pr_creation_failed");
@@ -647,17 +708,20 @@ async function handleApi(req, res, url, metrics, identity, requestMeta = {}) {
       return "api.factory.ideas.create.pr_pipeline_exception";
     }
     if (triagePr.error) {
+      const triageReason = String(triagePr.reason || triagePr.error);
       logEvent("idea.pr_pipeline.failed", {
         correlationId,
         ideaId: result.idea.ideaId,
-        reason: triagePr.error
+        reason: triageReason
       });
       json(res, 502, {
         error: "Idea created but PR creation failed",
-        reason: triagePr.error,
+        reason: triageReason,
         correlationId,
         idea: result.idea,
-        actions: ["retry-submit-idea", "open-factory-config", "reconnect-github"]
+        actions: Array.isArray(triagePr.actions) && triagePr.actions.length
+          ? triagePr.actions
+          : ["retry-submit-idea", "open-factory-config", "reconnect-github"]
       });
       return "api.factory.ideas.create.auto_pipeline_error";
     }
@@ -676,6 +740,23 @@ async function handleApi(req, res, url, metrics, identity, requestMeta = {}) {
         actions: ["retry-submit-idea", "open-factory-config", "reconnect-github"]
       });
       return "api.factory.ideas.create.missing_pr";
+    }
+    if (enforceGithubPr && (!triagePr.pr.externalUrl || !triagePr.pr.prNumber)) {
+      const reason = "GitHub PR URL/number missing from pipeline result.";
+      logEvent("idea.pr_pipeline.missing_github_url", {
+        correlationId,
+        ideaId: result.idea.ideaId,
+        prId: triagePr.pr.prId || null
+      });
+      json(res, 502, {
+        error: "Idea created but PR creation failed",
+        reason,
+        correlationId,
+        idea: result.idea,
+        triagePr,
+        actions: ["retry-submit-idea", "open-factory-config", "reconnect-github"]
+      });
+      return "api.factory.ideas.create.missing_github_url";
     }
 
     logEvent("idea.pr_pipeline.success", {
@@ -776,6 +857,25 @@ async function handleApi(req, res, url, metrics, identity, requestMeta = {}) {
       .map((item) => `${item.role.toUpperCase()}: ${item.content || "[image message]"}${item.images.length ? ` (images:${item.images.length})` : ""}`)
       .join("\n");
     const activeIdeaId = String(payload.ideaId || "").trim();
+    const relatedIdeasContext = payload.relatedIdeasContext && typeof payload.relatedIdeasContext === "object"
+      ? {
+          query: String(payload.relatedIdeasContext.query || "").trim(),
+          sourceIdeaIds: Array.isArray(payload.relatedIdeasContext.sourceIdeaIds)
+            ? payload.relatedIdeasContext.sourceIdeaIds.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 10)
+            : [],
+          ideas: Array.isArray(payload.relatedIdeasContext.ideas)
+            ? payload.relatedIdeasContext.ideas
+                .map((item) => ({
+                  ideaId: String(item?.ideaId || "").trim(),
+                  title: String(item?.title || "").trim(),
+                  description: String(item?.description || "").trim(),
+                  similarity: Number(item?.similarity || 0)
+                }))
+                .filter((item) => item.ideaId || item.title || item.description)
+                .slice(0, 10)
+            : []
+        }
+      : { query: "", sourceIdeaIds: [], ideas: [] };
     logEvent("idea.enrichment.start", {
       correlationId,
       actor: identity.userId,
@@ -783,7 +883,8 @@ async function handleApi(req, res, url, metrics, identity, requestMeta = {}) {
       sandboxId: payload.sandboxId,
       productId: payload.productId,
       activeIdeaId: activeIdeaId || null,
-      messageCount: thread.length
+      messageCount: thread.length,
+      sourceIdeaCount: relatedIdeasContext.sourceIdeaIds.length
     });
     const currentIdeasContext = await loadCurrentIdeasContextPack({
       orgId: payload.orgId,
@@ -795,6 +896,9 @@ async function handleApi(req, res, url, metrics, identity, requestMeta = {}) {
       `Headline: ${String(payload.headline).trim()}`,
       `Description: ${String(payload.description).trim()}`,
       currentIdeasContext.summary ? `Current Idea Context:\n${currentIdeasContext.summary}` : "",
+      relatedIdeasContext.ideas.length
+        ? `Related ideas context:\n${relatedIdeasContext.ideas.map((item) => `- ${item.ideaId}: ${item.title} :: ${item.description}`).join("\n")}`
+        : "",
       conversation ? `Conversation:\n${conversation}` : ""
     ].filter(Boolean).join("\n\n");
 
@@ -810,7 +914,10 @@ async function handleApi(req, res, url, metrics, identity, requestMeta = {}) {
       conversationContext: {
         activeIdeaId: activeIdeaId || "",
         currentIdeas: currentIdeasContext.ideas,
-        currentIdeasSummary: currentIdeasContext.summary
+        currentIdeasSummary: currentIdeasContext.summary,
+        relatedIdeas: relatedIdeasContext.ideas,
+        sourceIdeaIds: relatedIdeasContext.sourceIdeaIds,
+        relatedIdeasQuery: relatedIdeasContext.query
       }
     });
 
@@ -877,7 +984,8 @@ async function handleApi(req, res, url, metrics, identity, requestMeta = {}) {
       correlationId,
       activeIdeaId: activeIdeaId || null,
       readinessScore: draft?.triage?.readinessScore ?? null,
-      suggestionCount: Array.isArray(draft?.triage?.suggestions) ? draft.triage.suggestions.length : 0
+      suggestionCount: Array.isArray(draft?.triage?.suggestions) ? draft.triage.suggestions.length : 0,
+      sourceIdeaCount: relatedIdeasContext.sourceIdeaIds.length
     });
     json(res, 200, {
       draft,

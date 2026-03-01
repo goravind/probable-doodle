@@ -45,13 +45,17 @@ function requireScope() {
   }
 }
 
-async function api(path, method = "GET", body = null) {
+async function api(path, method = "GET", body = null, options = {}) {
   const ctx = getCtx();
+  const extraHeaders = options && typeof options === "object" && options.headers && typeof options.headers === "object"
+    ? options.headers
+    : {};
   const response = await fetch(path, {
     method,
     headers: {
       "Content-Type": "application/json",
-      "x-user-id": ctx.userId
+      "x-user-id": ctx.userId,
+      ...extraHeaders
     },
     body: body ? JSON.stringify(body) : undefined
   });
@@ -484,6 +488,10 @@ async function initIdea() {
   const ideaContextBadge = document.getElementById("ideaContextBadge");
   const currentIdeasContextMeta = document.getElementById("currentIdeasContextMeta");
   const currentIdeasContextList = document.getElementById("currentIdeasContextList");
+  const relatedIdeasMeta = document.getElementById("relatedIdeasMeta");
+  const relatedIdeasLoading = document.getElementById("relatedIdeasLoading");
+  const relatedIdeasList = document.getElementById("relatedIdeasList");
+  const relatedIdeasWarning = document.getElementById("relatedIdeasWarning");
   const enrichErrorBanner = document.getElementById("enrichErrorBanner");
   const enrichErrorText = document.getElementById("enrichErrorText");
   const enrichRetry = document.getElementById("enrichRetry");
@@ -506,6 +514,9 @@ async function initIdea() {
   let pendingChatImages = [];
   let latestDraft = null;
   let currentIdeasContext = { ideas: [], meta: null };
+  let relatedIdeasState = { query: "", ideas: [], duplicateWarning: "" };
+  let forkedSourceIdeaIds = [];
+  let relatedIdeasTimer = null;
   let latestArtifactMeta = null;
   let lastEnrichmentFailure = null;
   let lastPrFailure = null;
@@ -569,6 +580,10 @@ async function initIdea() {
     } catch {
       console.info(`[ui] ${event}`);
     }
+  }
+
+  function makeCorrelationId(prefix = "ui") {
+    return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
   }
 
   function toggleLoading(node, loading) {
@@ -747,6 +762,98 @@ async function initIdea() {
     };
     renderCurrentIdeasContext(pack);
     return pack;
+  }
+
+  function setRelatedIdeasLoading(loading) {
+    toggleLoading(relatedIdeasLoading, Boolean(loading));
+  }
+
+  function renderRelatedIdeas(state = null) {
+    const ideas = Array.isArray(state?.ideas) ? state.ideas : [];
+    const query = String(state?.query || "").trim();
+    const warning = String(state?.duplicateWarning || "").trim();
+    if (relatedIdeasMeta) {
+      if (query) {
+        relatedIdeasMeta.textContent = ideas.length
+          ? `Top ${ideas.length} similar ideas for "${query}".`
+          : `No similar ideas found for "${query}".`;
+      } else {
+        relatedIdeasMeta.textContent = "Type in chat to retrieve similar ideas.";
+      }
+    }
+    if (relatedIdeasWarning) {
+      relatedIdeasWarning.textContent = warning;
+      relatedIdeasWarning.style.display = warning ? "block" : "none";
+    }
+    if (!relatedIdeasList) return;
+    if (!ideas.length) {
+      relatedIdeasList.innerHTML = `<div class="mini">No related ideas yet.</div>`;
+      return;
+    }
+    relatedIdeasList.innerHTML = ideas
+      .map((item) => {
+        const summary = String(item.description || "").replace(/\s+/g, " ").trim();
+        const preview = summary.length > 110 ? `${summary.slice(0, 109)}...` : summary;
+        return `
+          <article class="related-idea-item">
+            <div class="title">${escapeHtml(item.title || "Untitled idea")}</div>
+            <div class="meta">${escapeHtml(item.ideaId || "-")} · similarity ${escapeHtml(Math.round(Number(item.similarity || 0) * 100))}% · ${escapeHtml(item.status || "new")}</div>
+            <div class="summary">${escapeHtml(preview || "No description available.")}</div>
+            <div class="row">
+              <button type="button" class="ghost" data-action="fork-idea" data-idea-id="${escapeHtml(item.ideaId || "")}">Start From This Idea</button>
+            </div>
+          </article>
+        `;
+      })
+      .join("");
+    relatedIdeasList.querySelectorAll("button[data-action='fork-idea']").forEach((button) => {
+      button.onclick = () => {
+        const ideaId = String(button.getAttribute("data-idea-id") || "").trim();
+        const candidate = ideas.find((item) => item.ideaId === ideaId);
+        if (!candidate) return;
+        const sourceSet = new Set([...(forkedSourceIdeaIds || []), ideaId]);
+        forkedSourceIdeaIds = Array.from(sourceSet).slice(0, 20);
+        setIdeaSeed({
+          headline: String(candidate.title || ""),
+          description: String(candidate.description || "")
+        });
+        appendChatMessage(
+          "assistant",
+          `Forked ${candidate.ideaId}. This idea will include provenance from the selected related artifact.`
+        );
+        show(`Forked from ${candidate.ideaId}. Source idea provenance will be attached.`);
+      };
+    });
+  }
+
+  async function fetchRelatedIdeas(query) {
+    const ctx = getCtx();
+    const normalized = String(query || "").trim();
+    if (!ctx.orgId || !ctx.sandboxId || !ctx.productId || normalized.length < 3) {
+      relatedIdeasState = { query: normalized, ideas: [], duplicateWarning: "" };
+      renderRelatedIdeas(relatedIdeasState);
+      return relatedIdeasState;
+    }
+    setRelatedIdeasLoading(true);
+    try {
+      const payload = await api(
+        `/api/ideas/similar?orgId=${encodeURIComponent(ctx.orgId)}&sandboxId=${encodeURIComponent(ctx.sandboxId)}&productArea=${encodeURIComponent(ctx.productId)}&query=${encodeURIComponent(normalized)}&limit=6&excludeIdeaId=${encodeURIComponent(ctx.ideaId || "")}`
+      );
+      relatedIdeasState = {
+        query: normalized,
+        ideas: Array.isArray(payload?.ideas) ? payload.ideas : [],
+        duplicateWarning: String(payload?.duplicateWarning || "")
+      };
+      renderRelatedIdeas(relatedIdeasState);
+      return relatedIdeasState;
+    } catch (error) {
+      relatedIdeasState = { query: normalized, ideas: [], duplicateWarning: "" };
+      renderRelatedIdeas(relatedIdeasState);
+      show(`Related ideas retrieval failed: ${errorReason(error)}`, true);
+      return relatedIdeasState;
+    } finally {
+      setRelatedIdeasLoading(false);
+    }
   }
 
   function errorReason(error) {
@@ -1029,7 +1136,7 @@ async function initIdea() {
         "meta"
       ),
       renderTextBlock(
-        `Context used: product ideas=${contextUsed.productIdeaCount ?? 0}, current ideas=${conversationContextUsed.currentIdeaCount ?? 0}, capabilities=${contextUsed.relatedCapabilityCount ?? 0}, docs=${contextUsed.githubDocCount ?? 0}${conversationContextUsed.activeIdeaId ? ` · active=${conversationContextUsed.activeIdeaId}` : ""}${artifactVersionLabel ? ` · artifact=${artifactVersionLabel}` : ""}`,
+        `Context used: product ideas=${contextUsed.productIdeaCount ?? 0}, current ideas=${conversationContextUsed.currentIdeaCount ?? 0}, related ideas=${conversationContextUsed.relatedIdeaCount ?? 0}, source ideas=${Array.isArray(conversationContextUsed.sourceIdeaIds) ? conversationContextUsed.sourceIdeaIds.length : 0}, capabilities=${contextUsed.relatedCapabilityCount ?? 0}, docs=${contextUsed.githubDocCount ?? 0}${conversationContextUsed.activeIdeaId ? ` · active=${conversationContextUsed.activeIdeaId}` : ""}${artifactVersionLabel ? ` · artifact=${artifactVersionLabel}` : ""}`,
         "meta"
       ),
       renderTextBlock(`Business goal: ${details.businessGoal || "-"}`, "body"),
@@ -1092,13 +1199,13 @@ async function initIdea() {
       return;
     }
     const prLink = pr.externalUrl
-      ? `<a href="${pr.externalUrl}" target="_blank" rel="noreferrer">Open PR</a>`
+      ? `<a href="${pr.externalUrl}" target="_blank" rel="noreferrer">Open PR${pr.prNumber ? ` #${escapeHtml(pr.prNumber)}` : ""}</a>`
       : `Internal PR ${escapeHtml(pr.prId || "")}`;
     ideaPrStatus.innerHTML = `
       <div class="t code">${escapeHtml(pr.repo || "-")} · ${escapeHtml(pr.branch || "-")}</div>
       <div class="s">PR: ${prLink}</div>
       <div class="s">Capability stage: ${escapeHtml(stage || "-")} · ${escapeHtml(pr.status || "draft")}</div>
-      <div class="s">${unlocked ? "Gate open: Spec stage unlocked." : "Gate locked: approve Idea PR first."}</div>
+      <div class="s">${unlocked ? "Gate unlocked: Spec stage unlocked." : "Gate ready: PR created. Approve to unlock Spec."}</div>
     `;
     if (unlocked) renderApprovedRendition(stage);
   }
@@ -1149,7 +1256,7 @@ async function initIdea() {
     return detail;
   }
 
-  async function requestChatEnrichment(ctx, seed, messages) {
+  async function requestChatEnrichment(ctx, seed, messages, options = {}) {
     const normalizedMessages = Array.isArray(messages)
       ? messages.slice(-18).map((item) => ({
           role: item.role,
@@ -1157,6 +1264,12 @@ async function initIdea() {
           images: Array.isArray(item.images) ? item.images : []
         }))
       : [];
+    const correlationId = String(options?.correlationId || "").trim();
+    const relatedIdeasContext = {
+      query: relatedIdeasState.query || "",
+      sourceIdeaIds: forkedSourceIdeaIds.slice(0, 20),
+      ideas: (Array.isArray(relatedIdeasState.ideas) ? relatedIdeasState.ideas : []).slice(0, 6)
+    };
     try {
       return await api("/api/v1/factory/ideas/ai-chat-enrich", "POST", {
         orgId: ctx.orgId,
@@ -1165,8 +1278,17 @@ async function initIdea() {
         ideaId: ctx.ideaId || "",
         headline: seed.headline,
         description: seed.description,
-        details: latestDraft?.details || {},
-        messages: normalizedMessages
+        details: {
+          ...(latestDraft?.details || {}),
+          metadata: {
+            ...((latestDraft?.details && latestDraft.details.metadata) || {}),
+            sourceIdeas: forkedSourceIdeaIds.slice(0, 20)
+          }
+        },
+        messages: normalizedMessages,
+        relatedIdeasContext
+      }, {
+        headers: correlationId ? { "x-correlation-id": correlationId } : {}
       });
     } catch (error) {
       if (error?.status !== 404) throw error;
@@ -1186,9 +1308,20 @@ async function initIdea() {
         intent: [
           `Headline: ${seed.headline}`,
           `Description: ${seed.description}`,
+          relatedIdeasContext.ideas.length
+            ? `Related ideas:\n${relatedIdeasContext.ideas.map((item) => `- ${item.ideaId}: ${item.title}`).join("\n")}`
+            : "",
           transcript ? `Conversation:\n${transcript}` : ""
         ].filter(Boolean).join("\n\n"),
-        details: latestDraft?.details || {}
+        details: {
+          ...(latestDraft?.details || {}),
+          metadata: {
+            ...((latestDraft?.details && latestDraft.details.metadata) || {}),
+            sourceIdeas: forkedSourceIdeaIds.slice(0, 20)
+          }
+        }
+      }, {
+        headers: correlationId ? { "x-correlation-id": correlationId } : {}
       });
       return {
         ...fallbackDraft,
@@ -1234,6 +1367,9 @@ async function initIdea() {
           source: "stored",
           details: stored.details || {}
         };
+        forkedSourceIdeaIds = Array.isArray(stored?.details?.metadata?.sourceIdeas)
+          ? stored.details.metadata.sourceIdeas.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 20)
+          : [];
         const storedVersion = Number(stored?.details?._ideaArtifactVersion || 0);
         latestArtifactMeta = storedVersion > 0
           ? { ideaId: stored.ideaId, version: storedVersion, updatedAt: stored?.details?._ideaArtifactUpdatedAt || "" }
@@ -1302,17 +1438,20 @@ async function initIdea() {
       try {
         hideSuccess(enrichSuccessBanner);
         setEnrichmentLoading(true);
+        const correlationId = makeCorrelationId("enrich");
         const ctx = getCtx();
         seed = ensureSeedFromConversation();
         await loadCurrentIdeasContext().catch(() => {});
+        const relatedQuery = message || seed.headline || seed.description || "";
+        await fetchRelatedIdeas(relatedQuery).catch(() => {});
         await runAiProgressFlow([
           { percent: 24, label: "Applying conversational refinement...", waitMs: 120 },
           { percent: 66, label: "Re-generating idea draft from full context...", waitMs: 140 },
           { percent: 90, label: "Updating triage analysis..." }
         ]);
-        const payload = await requestChatEnrichment(ctx, seed, chatState.messages);
+        const payload = await requestChatEnrichment(ctx, seed, chatState.messages, { correlationId });
         logClientEvent("ui.idea.enrichment.response", {
-          correlationId: payload?.correlationId || null,
+          correlationId: payload?.correlationId || correlationId,
           ideaId: payload?.artifact?.ideaId || ctx.ideaId || null,
           artifactVersion: payload?.artifact?.version || null
         });
@@ -1361,6 +1500,13 @@ async function initIdea() {
         chatSend.click();
       }
     });
+    chatInput.addEventListener("input", () => {
+      if (relatedIdeasTimer) clearTimeout(relatedIdeasTimer);
+      const nextQuery = String(chatInput.value || "").trim();
+      relatedIdeasTimer = setTimeout(() => {
+        fetchRelatedIdeas(nextQuery).catch(() => {});
+      }, 240);
+    });
   }
 
   if (createIdea) {
@@ -1368,6 +1514,7 @@ async function initIdea() {
       try {
         hideSuccess(prSuccessBanner);
         setPrLoading(true);
+        const correlationId = makeCorrelationId("create-pr");
         const productContext = await loadProductContext();
         if (!productContext.ready) {
           productContextReady = false;
@@ -1393,12 +1540,22 @@ async function initIdea() {
           title: seed.headline,
           description: seed.description,
           intent: `Headline: ${seed.headline}\nDescription: ${seed.description}`,
-          details: latestDraft?.details || {},
+          details: {
+            ...(latestDraft?.details || {}),
+            metadata: {
+              ...((latestDraft?.details && latestDraft.details.metadata) || {}),
+              sourceIdeas: forkedSourceIdeaIds.slice(0, 20)
+            }
+          },
           autoPipeline: true,
-          enforceGithubPr: false
+          enforceGithubPr: true
+        }, {
+          headers: {
+            "x-correlation-id": correlationId
+          }
         });
         logClientEvent("ui.idea.pr.create.response", {
-          correlationId: payload?.correlationId || null,
+          correlationId: payload?.correlationId || correlationId,
           ideaId: payload?.idea?.ideaId || null,
           capabilityId: payload?.triagePr?.capability?.capabilityId || null,
           prId: payload?.triagePr?.pr?.prId || null
@@ -1569,6 +1726,7 @@ async function initIdea() {
     appendChatMessage("assistant", greeting);
   }
   await loadCurrentIdeasContext().catch(() => {});
+  await fetchRelatedIdeas(currentIdeaSeed().headline || currentIdeaSeed().description || "").catch(() => {});
   await hydrateFromStoredIdea();
   await refreshCapabilityGate().catch(() => {});
 }

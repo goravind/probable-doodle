@@ -76,7 +76,8 @@ const DEFAULT_STORE = {
       ticketRepos: ["goravind/probable-doodle"],
       ticketLabels: ["product-factory", "capability"],
       ticketArea: "product-factory",
-      branchPrefix: "capability"
+      branchPrefix: "capability",
+      baseBranch: "main"
     }
   }
 };
@@ -192,12 +193,14 @@ async function initializePostgres() {
 
     CREATE TABLE IF NOT EXISTS factory_pull_requests (
       pr_id TEXT PRIMARY KEY,
+      idea_id TEXT,
       capability_id TEXT NOT NULL,
       repo TEXT NOT NULL,
       branch TEXT NOT NULL,
       title TEXT NOT NULL,
       description TEXT NOT NULL,
       files JSONB NOT NULL,
+      pr_number INTEGER,
       external_url TEXT,
       status TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -255,6 +258,8 @@ async function initializePostgres() {
     );
 
     ALTER TABLE factory_pull_requests ADD COLUMN IF NOT EXISTS external_url TEXT;
+    ALTER TABLE factory_pull_requests ADD COLUMN IF NOT EXISTS idea_id TEXT;
+    ALTER TABLE factory_pull_requests ADD COLUMN IF NOT EXISTS pr_number INTEGER;
     ALTER TABLE factory_ideas ADD COLUMN IF NOT EXISTS details JSONB NOT NULL DEFAULT '{}'::jsonb;
   `);
 
@@ -956,24 +961,28 @@ async function createFactoryPullRequest(pr) {
 
   if (STORE_PROVIDER === "postgres") {
     await pgPool.query(
-      `INSERT INTO factory_pull_requests (pr_id, capability_id, repo, branch, title, description, files, external_url, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
+      `INSERT INTO factory_pull_requests (pr_id, idea_id, capability_id, repo, branch, title, description, files, pr_number, external_url, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11)
        ON CONFLICT (pr_id)
-       DO UPDATE SET repo = EXCLUDED.repo,
+       DO UPDATE SET idea_id = EXCLUDED.idea_id,
+                     repo = EXCLUDED.repo,
                      branch = EXCLUDED.branch,
                      title = EXCLUDED.title,
                      description = EXCLUDED.description,
                      files = EXCLUDED.files,
+                     pr_number = EXCLUDED.pr_number,
                      external_url = EXCLUDED.external_url,
                      status = EXCLUDED.status`,
       [
         pr.prId,
+        pr.ideaId || null,
         pr.capabilityId,
         pr.repo,
         pr.branch,
         pr.title,
         pr.description,
         JSON.stringify(pr.files || []),
+        Number.isFinite(Number(pr.prNumber)) ? Number(pr.prNumber) : null,
         pr.externalUrl || null,
         pr.status
       ]
@@ -1100,12 +1109,14 @@ async function getFactoryPullRequestByCapability(capabilityId) {
     if (!result.rows[0]) return null;
     return {
       prId: result.rows[0].pr_id,
+      ideaId: result.rows[0].idea_id || null,
       capabilityId: result.rows[0].capability_id,
       repo: result.rows[0].repo,
       branch: result.rows[0].branch,
       title: result.rows[0].title,
       description: result.rows[0].description,
       files: result.rows[0].files || [],
+      prNumber: Number.isFinite(Number(result.rows[0].pr_number)) ? Number(result.rows[0].pr_number) : null,
       externalUrl: result.rows[0].external_url || null,
       status: result.rows[0].status,
       createdAt: result.rows[0].created_at
@@ -1131,7 +1142,8 @@ async function getFactoryConfig() {
       ? config.ticketLabels
       : DEFAULT_STORE.factory.config.ticketLabels,
     ticketArea: config.ticketArea || DEFAULT_STORE.factory.config.ticketArea,
-    branchPrefix: config.branchPrefix || DEFAULT_STORE.factory.config.branchPrefix
+    branchPrefix: config.branchPrefix || DEFAULT_STORE.factory.config.branchPrefix,
+    baseBranch: config.baseBranch || DEFAULT_STORE.factory.config.baseBranch
   });
 
   if (STORE_PROVIDER === "postgres") {
@@ -1161,7 +1173,8 @@ async function upsertFactoryConfig(config) {
       ? config.ticketLabels
       : DEFAULT_STORE.factory.config.ticketLabels,
     ticketArea: config.ticketArea || DEFAULT_STORE.factory.config.ticketArea,
-    branchPrefix: config.branchPrefix || DEFAULT_STORE.factory.config.branchPrefix
+    branchPrefix: config.branchPrefix || DEFAULT_STORE.factory.config.branchPrefix,
+    baseBranch: config.baseBranch || DEFAULT_STORE.factory.config.baseBranch
   };
 
   if (STORE_PROVIDER === "postgres") {

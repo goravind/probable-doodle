@@ -226,6 +226,7 @@ test("ai draft includes product context and existing idea corpus metadata", asyn
         productId: "crm",
         title: "Seed idea for context",
         description: "Created to populate idea corpus",
+        autoPipeline: false,
         enforceGithubPr: false
       })
     });
@@ -316,6 +317,7 @@ test("factory idea to PR flow works end-to-end", async () => {
         productId: "crm",
         title: "Hello World capability",
         description: "Simple capability from idea to PR",
+        autoPipeline: false,
         enforceGithubPr: false
       })
     });
@@ -501,7 +503,16 @@ test("idea creation returns actionable PR failure payload when GitHub sync fails
             productId: "crm",
             title: "Trigger PR failure",
             description: "Trigger PR creation failure via mocked GitHub 401",
-            autoPipeline: true
+            details: {
+              problemStatement: "PR creation still fails silently",
+              userPersona: "Product engineer",
+              businessGoal: "Surface actionable failures",
+              acceptanceCriteria: ["No silent failures", "Retry path visible"],
+              constraints: "GitHub auth and permissions",
+              nonGoals: "Local draft-only mode"
+            },
+            autoPipeline: true,
+            enforceGithubPr: true
           })
         });
 
@@ -522,4 +533,260 @@ test("idea creation returns actionable PR failure payload when GitHub sync fails
   } finally {
     global.fetch = nativeFetch;
   }
+});
+
+test("idea creation enforces GitHub PR creation and persists URL/number metadata", async () => {
+  const nativeFetch = global.fetch;
+  const githubCalls = [];
+  global.fetch = async (url, options = {}) => {
+    const str = String(url);
+    if (str.startsWith("https://api.github.com/")) {
+      const method = String(options.method || "GET").toUpperCase();
+      const body = options.body ? JSON.parse(String(options.body)) : null;
+      githubCalls.push({ method, url: str, body });
+
+      if (str.endsWith("/repos/goravind/probable-doodle") && method === "GET") {
+        return new Response(JSON.stringify({ default_branch: "main" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (str.includes("/git/ref/heads/main") && method === "GET") {
+        return new Response(JSON.stringify({ object: { sha: "abc123" } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if ((str.includes("/git/ref/heads/capability/") || str.includes("/git/ref/heads/capability%2F")) && method === "GET") {
+        return new Response("Not Found", { status: 404, headers: { "Content-Type": "text/plain" } });
+      }
+      if (str.endsWith("/git/refs") && method === "POST") {
+        return new Response(JSON.stringify({ ref: body?.ref || "refs/heads/capability/test" }), {
+          status: 201,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (str.includes("/contents/") && method === "GET") {
+        return new Response("Not Found", { status: 404, headers: { "Content-Type": "text/plain" } });
+      }
+      if (str.includes("/contents/") && method === "PUT") {
+        return new Response(JSON.stringify({ content: { path: "ok" } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (str.includes("/pulls?state=open&head=") && method === "GET") {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      if (str.endsWith("/pulls") && method === "POST") {
+        return new Response(JSON.stringify({ html_url: "https://github.com/goravind/probable-doodle/pull/4242", number: 4242 }), {
+          status: 201,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      return new Response(JSON.stringify({ message: `Unhandled mock: ${method} ${str}` }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    return nativeFetch(url, options);
+  };
+
+  try {
+    await withServer(
+      async (baseUrl) => {
+        const contextRes = await fetch(`${baseUrl}/api/v1/factory/product-context`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-user-id": "ava-admin"
+          },
+          body: JSON.stringify({
+            orgId: "acme-health",
+            sandboxId: "production",
+            productId: "crm",
+            context: {
+              productVision: "PR success test context",
+              primaryUsers: "Sales operations",
+              successMetrics: "Ship faster"
+            }
+          })
+        });
+        assert.equal(contextRes.status, 200);
+
+        const createRes = await fetch(`${baseUrl}/api/v1/factory/ideas`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-user-id": "ava-admin",
+            "x-correlation-id": "corr-pr-success-001"
+          },
+          body: JSON.stringify({
+            orgId: "acme-health",
+            sandboxId: "production",
+            productId: "crm",
+            title: "Create real PR from idea",
+            description: "Ensure branch, commit, and PR are created",
+            details: {
+              problemStatement: "Manual PR creation is inconsistent",
+              userPersona: "Engineering manager",
+              businessGoal: "Reliable idea-to-pr flow",
+              acceptanceCriteria: ["PR URL must be returned", "PR number must be persisted"],
+              constraints: "GitHub auth required",
+              nonGoals: "No local draft-only mode"
+            },
+            autoPipeline: true,
+            enforceGithubPr: true
+          })
+        });
+        assert.equal(createRes.status, 200);
+        const created = await createRes.json();
+        assert.equal(created.triagePr?.pr?.externalUrl, "https://github.com/goravind/probable-doodle/pull/4242");
+        assert.equal(created.triagePr?.pr?.prNumber, 4242);
+
+        const capId = created?.triagePr?.capability?.capabilityId;
+        assert.ok(capId);
+        const detailRes = await fetch(`${baseUrl}/api/v1/factory/capabilities/${capId}`, {
+          headers: { "x-user-id": "ava-admin" }
+        });
+        assert.equal(detailRes.status, 200);
+        const detail = await detailRes.json();
+        assert.equal(detail?.pr?.externalUrl, "https://github.com/goravind/probable-doodle/pull/4242");
+        assert.equal(detail?.pr?.prNumber, 4242);
+
+        assert.ok(githubCalls.some((call) => call.method === "POST" && call.url.includes("/git/refs")));
+        assert.ok(githubCalls.some((call) => call.method === "PUT" && call.url.includes("/idea.md")));
+        assert.ok(githubCalls.some((call) => call.method === "PUT" && call.url.includes("/triage.md")));
+        assert.ok(githubCalls.some((call) => call.method === "PUT" && call.url.includes("/metadata.json")));
+      },
+      {
+        env: {
+          FACTORY_LOCAL_PR_ONLY: "0",
+          GITHUB_TOKEN: "fake-token-for-success"
+        }
+      }
+    );
+  } finally {
+    global.fetch = nativeFetch;
+  }
+});
+
+test("similar ideas endpoint returns ranked ideas and enrichment uses related ideas context", async () => {
+  await withServer(async (baseUrl) => {
+    const contextRes = await fetch(`${baseUrl}/api/v1/factory/product-context`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-id": "ava-admin"
+      },
+      body: JSON.stringify({
+        orgId: "acme-health",
+        sandboxId: "production",
+        productId: "crm",
+        context: {
+          productVision: "Related ideas test context",
+          primaryUsers: "Marketing operations",
+          successMetrics: "Avoid duplicate ideas"
+        }
+      })
+    });
+    assert.equal(contextRes.status, 200);
+
+    const seedARes = await fetch(`${baseUrl}/api/v1/factory/ideas`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-id": "ava-admin"
+      },
+      body: JSON.stringify({
+        orgId: "acme-health",
+        sandboxId: "production",
+        productId: "crm",
+        title: "Semantic profile for lead scoring",
+        description: "Build semantic profile and avoid duplicates",
+        details: {
+          problemStatement: "Duplicate lead-scoring ideas",
+          userPersona: "RevOps",
+          businessGoal: "Reduce duplicate ideation",
+          acceptanceCriteria: ["Similarity retrieval enabled"]
+        },
+        autoPipeline: false
+      })
+    });
+    assert.equal(seedARes.status, 200);
+    const seedA = await seedARes.json();
+
+    const seedBRes = await fetch(`${baseUrl}/api/v1/factory/ideas`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-id": "ava-admin"
+      },
+      body: JSON.stringify({
+        orgId: "acme-health",
+        sandboxId: "production",
+        productId: "crm",
+        title: "Persona-aware lead routing",
+        description: "Use similar ideas context for lead routing",
+        details: {
+          problemStatement: "Routing logic not persona-aware",
+          userPersona: "Marketing manager",
+          businessGoal: "Increase conversion quality",
+          acceptanceCriteria: ["Persona tags included"]
+        },
+        autoPipeline: false
+      })
+    });
+    assert.equal(seedBRes.status, 200);
+
+    const similarRes = await fetch(
+      `${baseUrl}/api/ideas/similar?orgId=acme-health&sandboxId=production&productArea=crm&query=semantic%20lead%20profile&limit=5`,
+      { headers: { "x-user-id": "ava-admin" } }
+    );
+    assert.equal(similarRes.status, 200);
+    const similar = await similarRes.json();
+    assert.ok(Array.isArray(similar.ideas));
+    assert.ok(similar.ideas.length >= 1);
+
+    const enrichRes = await fetch(`${baseUrl}/api/v1/factory/ideas/ai-chat-enrich`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-id": "ava-admin"
+      },
+      body: JSON.stringify({
+        orgId: "acme-health",
+        sandboxId: "production",
+        productId: "crm",
+        headline: "New semantic idea",
+        description: "Reuse related ideas",
+        details: {
+          metadata: {
+            sourceIdeas: [seedA.idea.ideaId]
+          }
+        },
+        relatedIdeasContext: {
+          query: "semantic lead profile",
+          sourceIdeaIds: [seedA.idea.ideaId],
+          ideas: similar.ideas.slice(0, 2)
+        },
+        messages: [
+          {
+            role: "user",
+            content: "Create a differentiated idea using related context",
+            images: []
+          }
+        ]
+      })
+    });
+    assert.equal(enrichRes.status, 200);
+    const enrich = await enrichRes.json();
+    assert.ok(enrich?.draft?.conversationContextUsed);
+    assert.ok((enrich.draft.conversationContextUsed.relatedIdeaCount || 0) >= 1);
+    assert.ok(Array.isArray(enrich.draft.conversationContextUsed.sourceIdeaIds));
+    assert.ok(enrich.draft.conversationContextUsed.sourceIdeaIds.includes(seedA.idea.ideaId));
+  });
 });

@@ -241,6 +241,90 @@ function ideaContextSnapshot(item) {
   };
 }
 
+function tokenize(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token && token.length > 2);
+}
+
+function keywordSetFromIdea(idea) {
+  const details = idea?.details && typeof idea.details === "object" ? idea.details : {};
+  const corpus = [
+    idea?.title,
+    idea?.description,
+    details.userPersona,
+    details.businessGoal,
+    details.problemStatement,
+    details.constraints,
+    details.nonGoals
+  ].join(" ");
+  return new Set(tokenize(corpus));
+}
+
+function jaccardScore(aSet, bSet) {
+  if (!(aSet instanceof Set) || !(bSet instanceof Set) || !aSet.size || !bSet.size) return 0;
+  let intersection = 0;
+  for (const token of aSet) {
+    if (bSet.has(token)) intersection += 1;
+  }
+  const union = aSet.size + bSet.size - intersection;
+  return union > 0 ? intersection / union : 0;
+}
+
+async function findSimilarIdeas({
+  orgId,
+  sandboxId,
+  productId,
+  query = "",
+  limit = 6,
+  excludeIdeaId = ""
+}) {
+  const scoped = await loadAllProductIdeas({
+    orgId,
+    sandboxId,
+    productId,
+    pageSize: 100,
+    maxIdeas: 1200
+  });
+  const rows = Array.isArray(scoped?.ideas) ? scoped.ideas : [];
+  const normalizedLimit = Math.max(1, Math.min(12, Number(limit) || 6));
+  const queryTokens = new Set(tokenize(query));
+
+  const ranked = rows
+    .filter((item) => item?.ideaId && item.ideaId !== excludeIdeaId)
+    .map((item) => {
+      const itemTokens = keywordSetFromIdea(item);
+      const lexical = jaccardScore(queryTokens, itemTokens);
+      const statusBoost = String(item.status || "").toLowerCase() === "approved" ? 0.05 : 0;
+      const score = Math.min(1, lexical + statusBoost);
+      return {
+        ideaId: item.ideaId,
+        title: item.title,
+        description: item.description,
+        status: item.status || "new",
+        createdAt: item.createdAt || "",
+        similarity: Number(score.toFixed(4))
+      };
+    })
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, normalizedLimit);
+
+  const duplicateWarning = ranked[0] && ranked[0].similarity >= 0.45
+    ? `Potential duplicate detected with ${ranked[0].ideaId} (${Math.round(ranked[0].similarity * 100)}% similarity).`
+    : null;
+
+  return {
+    query: String(query || "").trim(),
+    productArea: productId,
+    total: rows.length,
+    ideas: ranked,
+    duplicateWarning
+  };
+}
+
 async function loadOrgSandboxLlmContext(
   idea,
   {
@@ -403,6 +487,11 @@ function asStringList(value) {
 function mergeGeneratedIdeaDetails(seed = {}, generated = {}) {
   const seedDetails = seed && typeof seed === "object" ? seed : {};
   const generatedDetails = generated && typeof generated === "object" ? generated : {};
+  const seedMetadata = seedDetails.metadata && typeof seedDetails.metadata === "object" ? seedDetails.metadata : {};
+  const generatedMetadata = generatedDetails.metadata && typeof generatedDetails.metadata === "object" ? generatedDetails.metadata : {};
+  const sourceIdeas = Array.isArray(generatedMetadata.sourceIdeas)
+    ? generatedMetadata.sourceIdeas
+    : (Array.isArray(seedMetadata.sourceIdeas) ? seedMetadata.sourceIdeas : []);
   return {
     problemStatement: asString(generatedDetails.problemStatement || seedDetails.problemStatement),
     userPersona: asString(generatedDetails.userPersona || seedDetails.userPersona),
@@ -412,7 +501,15 @@ function mergeGeneratedIdeaDetails(seed = {}, generated = {}) {
       : asStringList(seedDetails.acceptanceCriteria),
     constraints: asString(generatedDetails.constraints || seedDetails.constraints),
     nonGoals: asString(generatedDetails.nonGoals || seedDetails.nonGoals),
-    attachments: asStringList(seedDetails.attachments)
+    attachments: asStringList(seedDetails.attachments),
+    metadata: {
+      ...seedMetadata,
+      ...generatedMetadata,
+      sourceIdeas: sourceIdeas
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+        .slice(0, 20)
+    }
   };
 }
 
@@ -511,6 +608,10 @@ async function generateIdeaDraft({
     ? {
         activeIdeaId: asString(conversationContext.activeIdeaId || ""),
         currentIdeasSummary: asString(conversationContext.currentIdeasSummary || ""),
+        relatedIdeasQuery: asString(conversationContext.relatedIdeasQuery || ""),
+        sourceIdeaIds: Array.isArray(conversationContext.sourceIdeaIds)
+          ? conversationContext.sourceIdeaIds.map((item) => asString(item)).filter(Boolean).slice(0, 20)
+          : [],
         currentIdeas: Array.isArray(conversationContext.currentIdeas)
           ? conversationContext.currentIdeas
               .map((item) => ({
@@ -522,12 +623,26 @@ async function generateIdeaDraft({
               }))
               .filter((item) => item.ideaId || item.title || item.description)
               .slice(0, 20)
+          : [],
+        relatedIdeas: Array.isArray(conversationContext.relatedIdeas)
+          ? conversationContext.relatedIdeas
+              .map((item) => ({
+                ideaId: asString(item?.ideaId),
+                title: asString(item?.title),
+                description: asString(item?.description),
+                similarity: Number(item?.similarity || 0)
+              }))
+              .filter((item) => item.ideaId || item.title || item.description)
+              .slice(0, 20)
           : []
       }
     : {
         activeIdeaId: "",
         currentIdeasSummary: "",
-        currentIdeas: []
+        relatedIdeasQuery: "",
+        sourceIdeaIds: [],
+        currentIdeas: [],
+        relatedIdeas: []
       };
   const deterministic = deterministicIdeaFromContext({
     intentText,
@@ -564,7 +679,10 @@ async function generateIdeaDraft({
       || deterministic.details.constraints,
     nonGoals: draft?.details?.nonGoals
       || (enrichment?.enrichedIdea?.nonGoals || []).join("; ")
-      || deterministic.details.nonGoals
+      || deterministic.details.nonGoals,
+    metadata: {
+      sourceIdeas: normalizedConversationContext.sourceIdeaIds
+    }
   });
 
   const titleOut = asString(draft?.title || enrichment?.enrichedIdea?.title || deterministic.title || seedTitle);
@@ -592,7 +710,8 @@ async function generateIdeaDraft({
       : normalizedFallback.acceptanceCriteria,
     constraints: mergedDetails.constraints || normalizedFallback.constraints,
     nonGoals: mergedDetails.nonGoals || normalizedFallback.nonGoals,
-    attachments: mergedDetails.attachments
+    attachments: mergedDetails.attachments,
+    metadata: mergedDetails.metadata || {}
   };
 
   const resolved = {
@@ -628,7 +747,10 @@ async function generateIdeaDraft({
     conversationContextUsed: {
       activeIdeaId: normalizedConversationContext.activeIdeaId || "",
       currentIdeaCount: normalizedConversationContext.currentIdeas.length,
-      hasCurrentIdeaSummary: Boolean(normalizedConversationContext.currentIdeasSummary)
+      hasCurrentIdeaSummary: Boolean(normalizedConversationContext.currentIdeasSummary),
+      relatedIdeaCount: normalizedConversationContext.relatedIdeas.length,
+      sourceIdeaIds: normalizedConversationContext.sourceIdeaIds,
+      relatedIdeasQuery: normalizedConversationContext.relatedIdeasQuery || ""
     },
     fallbackReason: usedLlm ? null : (llmEnabled ? "llm_generation_failed_or_empty" : "missing_openai_api_key")
   };
@@ -803,8 +925,9 @@ async function getCapabilityRepoBranch(capability) {
     ? config.codeRepos[0]
     : "goravind/probable-doodle";
   const branchPrefix = config.branchPrefix || "capability";
+  const baseBranch = config.baseBranch || "main";
   const branch = capabilityBranchFromScope(branchPrefix, capability);
-  return { repo, branch };
+  return { repo, branch, baseBranch };
 }
 
 async function buildAutoArchitectureDraft(capabilityId) {
@@ -1098,6 +1221,7 @@ async function buildToPr({ capabilityId, actor }) {
   const ticketRepos = repoMode === "multi" ? configuredTicketRepos : [configuredTicketRepos[0]];
   const labels = Array.isArray(config.ticketLabels) ? config.ticketLabels : [];
   const branchPrefix = config.branchPrefix || "capability";
+  const baseBranch = config.baseBranch || "main";
   const areaLabel = config.ticketArea ? `area:${config.ticketArea}` : null;
   const mergedLabels = areaLabel ? [...new Set([...labels, areaLabel])] : labels;
 
@@ -1107,17 +1231,22 @@ async function buildToPr({ capabilityId, actor }) {
   for (const repo of targetCodeRepos) {
     const prId = `PR-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const branch = capabilityBranchFromScope(branchPrefix, capability);
-  const prResult = await createGithubPullRequest({
+    const prResult = await createGithubPullRequest({
       repo,
       branch,
+      baseBranch,
       title: prTitle,
       description: prDescription,
       files: generatedFiles,
       orgId: capability.orgId
     });
+    const prNumber = Number.isFinite(Number(prResult?.prNumber))
+      ? Number(prResult.prNumber)
+      : parsePrNumberFromUrl(prResult?.url || null);
 
     const pr = await createFactoryPullRequest({
       prId,
+      ideaId: capability.ideaId || null,
       capabilityId,
       repo,
       branch: prResult.branch || branch,
@@ -1125,6 +1254,7 @@ async function buildToPr({ capabilityId, actor }) {
       description: prDescription,
       files: generatedFiles,
       status: prLikeStatusFromSyncMode(prResult.mode),
+      prNumber: Number.isFinite(Number(prNumber)) ? Number(prNumber) : null,
       externalUrl: prResult.url || null,
       createdAt: nowIso()
     });
@@ -1791,7 +1921,13 @@ async function getStageRendition({ capabilityId, stageKey, source = "auto" }) {
   };
 }
 
-async function syncStageToPr({ capabilityId, stageKey, actor = "unknown" }) {
+async function syncStageToPr({
+  capabilityId,
+  stageKey,
+  actor = "unknown",
+  enforceGithubPr = false,
+  correlationId = ""
+}) {
   const capability = await getFactoryCapability(capabilityId);
   if (!capability) return { error: "Capability not found" };
 
@@ -1803,6 +1939,7 @@ async function syncStageToPr({ capabilityId, stageKey, actor = "unknown" }) {
     ? config.codeRepos[0]
     : "goravind/probable-doodle";
   const branchPrefix = config.branchPrefix || "capability";
+  const baseBranch = config.baseBranch || "main";
   const branch = capabilityBranchFromScope(branchPrefix, capability);
   const prTitle = `[${capability.productId}/${capabilityId}] ${capability.title}`;
   const prDescription = `Stage sync: ${stageKey}`;
@@ -1840,17 +1977,24 @@ async function syncStageToPr({ capabilityId, stageKey, actor = "unknown" }) {
   const result = await syncDocsToPullRequest({
     repo,
     branch,
+    baseBranch,
     title: prTitle,
     description: prDescription,
     files,
-    orgId: capability.orgId
+    orgId: capability.orgId,
+    enforceGithubPr,
+    correlationId
   });
 
   const existingPr = await getFactoryPullRequestByCapability(capabilityId);
   const prId = existingPr?.prId || `PR-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const prNumber = Number.isFinite(Number(result?.prNumber))
+    ? Number(result.prNumber)
+    : parsePrNumberFromUrl(result?.url || existingPr?.externalUrl || null);
 
   const pr = await createFactoryPullRequest({
     prId,
+    ideaId: capability.ideaId || existingPr?.ideaId || null,
     capabilityId,
     repo,
     branch: result.branch || branch,
@@ -1858,6 +2002,7 @@ async function syncStageToPr({ capabilityId, stageKey, actor = "unknown" }) {
     description: prDescription,
     files: files.map((item) => item.path),
     status: prLikeStatusFromSyncMode(result.mode),
+    prNumber: Number.isFinite(Number(prNumber)) ? Number(prNumber) : null,
     externalUrl: result.url || existingPr?.externalUrl || null,
     createdAt: existingPr?.createdAt || nowIso(),
     updatedBy: actor
@@ -1986,8 +2131,19 @@ async function createSpecPrFromCapability({ capabilityId, actor = "unknown" }) {
   };
 }
 
-async function createTriagePrFromIdea({ ideaId, capabilityTitle, actor = "unknown" }) {
-  pipelineLog("triage_pr.create.start", { ideaId, actor });
+async function createTriagePrFromIdea({
+  ideaId,
+  capabilityTitle,
+  actor = "unknown",
+  enforceGithubPr = false,
+  correlationId = ""
+}) {
+  pipelineLog("triage_pr.create.start", {
+    ideaId,
+    actor,
+    enforceGithubPr: Boolean(enforceGithubPr),
+    correlationId: correlationId || undefined
+  });
   let triaged = null;
   const existingCapability = await getFactoryCapabilityByIdea(ideaId);
   if (existingCapability) {
@@ -2010,6 +2166,7 @@ async function createTriagePrFromIdea({ ideaId, capabilityTitle, actor = "unknow
     ? config.codeRepos[0]
     : "goravind/probable-doodle";
   const branchPrefix = config.branchPrefix || "capability";
+  const baseBranch = config.baseBranch || "main";
   const branch = capabilityBranchFromScope(branchPrefix, triaged.capability);
   const prTitle = `[${triaged.capability.productId}/${capabilityId}] ${triaged.capability.title} · Triage`;
   const prDescription = "Auto-generated triage PR (raw idea + AI enrichment)";
@@ -2025,6 +2182,22 @@ async function createTriagePrFromIdea({ ideaId, capabilityTitle, actor = "unknow
   const enrichedIdea = assisted?.assist?.content || rawIdea;
   const triageSource = assisted?.triage || triaged.triage;
   const triageReport = `${triageToMarkdown(triaged.idea, triageSource)}${enrichmentCompetitiveMarkdown(assisted?.enrichment)}`;
+  const sourceIdeas = Array.isArray(triaged?.idea?.details?.metadata?.sourceIdeas)
+    ? triaged.idea.details.metadata.sourceIdeas.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  const metadataJson = JSON.stringify(
+    {
+      ideaId: triaged.idea.ideaId,
+      capabilityId,
+      orgId: triaged.capability.orgId,
+      sandboxId: triaged.capability.sandboxId,
+      productId: triaged.capability.productId,
+      sourceIdeas,
+      generatedAt: nowIso()
+    },
+    null,
+    2
+  );
 
   const rawDocSave = await saveStageDocument({
     capabilityId,
@@ -2053,6 +2226,7 @@ async function createTriagePrFromIdea({ ideaId, capabilityTitle, actor = "unknow
     result = await syncDocsToPullRequest({
       repo,
       branch,
+      baseBranch,
       title: prTitle,
       description: prDescription,
       files: [
@@ -2070,9 +2244,16 @@ async function createTriagePrFromIdea({ ideaId, capabilityTitle, actor = "unknow
           path: `${docsBase}/triage.md`,
           content: triageReport,
           message: `triage(ai): add LLM enrichment for ${capabilityId}`
+        },
+        {
+          path: `${docsBase}/metadata.json`,
+          content: metadataJson,
+          message: `triage(meta): persist idea provenance for ${capabilityId}`
         }
       ],
-      orgId: triaged.capability.orgId
+      orgId: triaged.capability.orgId,
+      enforceGithubPr,
+      correlationId
     });
   } catch (error) {
     pipelineLog("triage_pr.sync.failed", {
@@ -2080,9 +2261,21 @@ async function createTriagePrFromIdea({ ideaId, capabilityTitle, actor = "unknow
       capabilityId,
       repo,
       branch,
-      reason: String(error?.message || error || "sync_failed")
+      reason: String(error?.message || error || "sync_failed"),
+      correlationId: correlationId || undefined
     });
     throw error;
+  }
+  const prNumber = Number.isFinite(Number(result?.prNumber))
+    ? Number(result.prNumber)
+    : parsePrNumberFromUrl(result?.url || null);
+  if (enforceGithubPr && (!result?.url || !prNumber || result?.mode !== "github")) {
+    return {
+      error: "GitHub PR creation required but no GitHub PR URL/number was returned.",
+      reason: "github_pr_not_created",
+      sync: result,
+      actions: ["reconnect-github", "retry-submit-idea"]
+    };
   }
   pipelineLog("triage_pr.sync.completed", {
     ideaId,
@@ -2090,18 +2283,22 @@ async function createTriagePrFromIdea({ ideaId, capabilityTitle, actor = "unknow
     mode: result?.mode || "unknown",
     repo,
     branch: result?.branch || branch,
-    url: result?.url || null
+    url: result?.url || null,
+    prNumber: Number.isFinite(Number(prNumber)) ? Number(prNumber) : null,
+    correlationId: correlationId || undefined
   });
 
   const pr = await createFactoryPullRequest({
     prId: `PR-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    ideaId: triaged.idea.ideaId,
     capabilityId,
     repo,
     branch: result.branch || branch,
     title: prTitle,
     description: prDescription,
-    files: [`${docsBase}/idea.md`, `${docsBase}/triage.md`],
+    files: [`${docsBase}/idea.md`, `${docsBase}/triage.md`, `${docsBase}/metadata.json`],
     status: prLikeStatusFromSyncMode(result.mode),
+    prNumber: Number.isFinite(Number(prNumber)) ? Number(prNumber) : null,
     externalUrl: result.url || null,
     createdAt: nowIso(),
     updatedBy: actor
@@ -2110,7 +2307,10 @@ async function createTriagePrFromIdea({ ideaId, capabilityTitle, actor = "unknow
     ideaId,
     capabilityId,
     prId: pr.prId,
-    status: pr.status
+    status: pr.status,
+    externalUrl: pr.externalUrl || null,
+    prNumber: pr.prNumber || null,
+    correlationId: correlationId || undefined
   });
 
   return {
@@ -2253,6 +2453,7 @@ async function getFactoryCapabilityDetail(capabilityId) {
 
 module.exports = {
   STAGES,
+  findSimilarIdeas,
   createIdea,
   generateIdeaDraft,
   suggestIdeas,

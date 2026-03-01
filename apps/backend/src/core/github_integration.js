@@ -84,9 +84,11 @@ function githubHeaders(token) {
 }
 
 async function githubRequest(path, token, options = {}) {
+  const correlationId = String(options.correlationId || "").trim();
   ghLog("github.request.start", {
     path,
-    method: options.method || "GET"
+    method: options.method || "GET",
+    correlationId: correlationId || undefined
   });
   const response = await fetch(`${GITHUB_API}${path}`, {
     ...options,
@@ -102,7 +104,8 @@ async function githubRequest(path, token, options = {}) {
       path,
       method: options.method || "GET",
       status: response.status,
-      error: text.slice(0, 240)
+      error: text.slice(0, 240),
+      correlationId: correlationId || undefined
     });
     throw new Error(`GitHub API error ${response.status}: ${text}`);
   }
@@ -128,9 +131,10 @@ async function githubRequestAllow404(path, token, options = {}) {
   return response.json();
 }
 
-async function ensureBranch(owner, name, branch, token) {
+async function ensureBranch(owner, name, branch, token, { baseBranch = "", correlationId = "" } = {}) {
   const repoData = await githubRequest(`/repos/${owner}/${name}`, token);
-  const base = repoData.default_branch || "main";
+  const configuredBase = String(baseBranch || "").trim();
+  const base = configuredBase || repoData.default_branch || "main";
 
   const existing = await githubRequestAllow404(
     `/repos/${owner}/${name}/git/ref/heads/${encodeURIComponent(branch)}`,
@@ -138,10 +142,11 @@ async function ensureBranch(owner, name, branch, token) {
   );
   if (existing) return { base, branch };
 
-  const baseRef = await githubRequest(`/repos/${owner}/${name}/git/ref/heads/${encodeURIComponent(base)}`, token);
+  const baseRef = await githubRequest(`/repos/${owner}/${name}/git/ref/heads/${encodeURIComponent(base)}`, token, { correlationId });
   const baseSha = baseRef.object.sha;
   await githubRequest(`/repos/${owner}/${name}/git/refs`, token, {
     method: "POST",
+    correlationId,
     body: JSON.stringify({
       ref: `refs/heads/${branch}`,
       sha: baseSha
@@ -150,12 +155,13 @@ async function ensureBranch(owner, name, branch, token) {
   return { base, branch };
 }
 
-async function upsertFile(owner, name, branch, path, content, token, message = null) {
+async function upsertFile(owner, name, branch, path, content, token, message = null, correlationId = "") {
   const safePath = path.split("/").map((segment) => encodeURIComponent(segment)).join("/");
   const existing = await githubRequestAllow404(`/repos/${owner}/${name}/contents/${safePath}?ref=${encodeURIComponent(branch)}`, token);
 
   await githubRequest(`/repos/${owner}/${name}/contents/${safePath}`, token, {
     method: "PUT",
+    correlationId,
     body: JSON.stringify({
       message: message || `sync ${path}`,
       content: Buffer.from(content || "").toString("base64"),
@@ -165,13 +171,18 @@ async function upsertFile(owner, name, branch, path, content, token, message = n
   });
 }
 
-async function ensurePullRequest(owner, name, branch, base, title, description, token) {
-  const openPrs = await githubRequest(`/repos/${owner}/${name}/pulls?state=open&head=${encodeURIComponent(`${owner}:${branch}`)}`, token);
+async function ensurePullRequest(owner, name, branch, base, title, description, token, correlationId = "") {
+  const openPrs = await githubRequest(
+    `/repos/${owner}/${name}/pulls?state=open&head=${encodeURIComponent(`${owner}:${branch}`)}`,
+    token,
+    { correlationId }
+  );
   if (Array.isArray(openPrs) && openPrs.length > 0) {
     return openPrs[0];
   }
   return githubRequest(`/repos/${owner}/${name}/pulls`, token, {
     method: "POST",
+    correlationId,
     body: JSON.stringify({
       title,
       head: branch,
@@ -211,10 +222,34 @@ async function createGithubIssue(repo, title, body, labels = [], orgId = null) {
   };
 }
 
-async function createGithubPullRequest({ repo, branch, title, description, files, orgId = null }) {
-  ghLog("github.pr.create.start", { repo, branch, fileCount: Array.isArray(files) ? files.length : 0, orgId: orgId || null });
+async function createGithubPullRequest({
+  repo,
+  branch,
+  title,
+  description,
+  files,
+  orgId = null,
+  enforceGithubPr = false,
+  baseBranch = "",
+  correlationId = ""
+}) {
+  ghLog("github.pr.create.start", {
+    repo,
+    branch,
+    fileCount: Array.isArray(files) ? files.length : 0,
+    orgId: orgId || null,
+    enforceGithubPr: Boolean(enforceGithubPr),
+    baseBranch: baseBranch || null,
+    correlationId: correlationId || undefined
+  });
   const auth = await resolveGithubAuth({ orgId });
   if (!auth.token) {
+    if (enforceGithubPr) {
+      const modeHint = FACTORY_LOCAL_PR_ONLY
+        ? "FACTORY_LOCAL_PR_ONLY is enabled"
+        : "GitHub token/installation is missing";
+      throw new Error(`GitHub PR creation is required but unavailable: ${modeHint}`);
+    }
     ghLog("github.pr.create.draft_mode", { repo, branch });
     return {
       mode: "draft",
@@ -229,15 +264,17 @@ async function createGithubPullRequest({ repo, branch, title, description, files
 
   const { owner, name } = parseRepo(repo);
 
-  const repoData = await githubRequest(`/repos/${owner}/${name}`, auth.token);
-  const base = repoData.default_branch || "main";
+  const repoData = await githubRequest(`/repos/${owner}/${name}`, auth.token, { correlationId });
+  const configuredBase = String(baseBranch || "").trim();
+  const base = configuredBase || repoData.default_branch || "main";
 
-  const baseRef = await githubRequest(`/repos/${owner}/${name}/git/ref/heads/${encodeURIComponent(base)}`, auth.token);
+  const baseRef = await githubRequest(`/repos/${owner}/${name}/git/ref/heads/${encodeURIComponent(base)}`, auth.token, { correlationId });
   const baseSha = baseRef.object.sha;
   let resolvedBranch = branch;
   try {
     await githubRequest(`/repos/${owner}/${name}/git/refs`, auth.token, {
       method: "POST",
+      correlationId,
       body: JSON.stringify({
         ref: `refs/heads/${resolvedBranch}`,
         sha: baseSha
@@ -248,6 +285,7 @@ async function createGithubPullRequest({ repo, branch, title, description, files
     resolvedBranch = `${branch}-${Date.now()}`;
     await githubRequest(`/repos/${owner}/${name}/git/refs`, auth.token, {
       method: "POST",
+      correlationId,
       body: JSON.stringify({
         ref: `refs/heads/${resolvedBranch}`,
         sha: baseSha
@@ -260,6 +298,7 @@ async function createGithubPullRequest({ repo, branch, title, description, files
     const safePath = file.split("/").map((segment) => encodeURIComponent(segment)).join("/");
     await githubRequest(`/repos/${owner}/${name}/contents/${safePath}`, auth.token, {
       method: "PUT",
+      correlationId,
       body: JSON.stringify({
         message: `add ${file}`,
         content: Buffer.from(content).toString("base64"),
@@ -270,6 +309,7 @@ async function createGithubPullRequest({ repo, branch, title, description, files
 
   const pr = await githubRequest(`/repos/${owner}/${name}/pulls`, auth.token, {
     method: "POST",
+    correlationId,
     body: JSON.stringify({
       title,
       head: resolvedBranch,
@@ -282,7 +322,8 @@ async function createGithubPullRequest({ repo, branch, title, description, files
     repo,
     branch: resolvedBranch,
     prNumber: pr.number,
-    url: pr.html_url || null
+    url: pr.html_url || null,
+    correlationId: correlationId || undefined
   });
 
   return {
@@ -297,9 +338,25 @@ async function createGithubPullRequest({ repo, branch, title, description, files
   };
 }
 
-async function syncDocsToPullRequest({ repo, branch, title, description, files, orgId = null }) {
+async function syncDocsToPullRequest({
+  repo,
+  branch,
+  title,
+  description,
+  files,
+  orgId = null,
+  enforceGithubPr = false,
+  baseBranch = "",
+  correlationId = ""
+}) {
   const auth = await resolveGithubAuth({ orgId });
   if (!auth.token) {
+    if (enforceGithubPr) {
+      const modeHint = FACTORY_LOCAL_PR_ONLY
+        ? "FACTORY_LOCAL_PR_ONLY is enabled"
+        : "GitHub token/installation is missing";
+      throw new Error(`GitHub PR creation is required but unavailable: ${modeHint}`);
+    }
     return {
       mode: "draft",
       repo,
@@ -312,10 +369,22 @@ async function syncDocsToPullRequest({ repo, branch, title, description, files, 
   }
 
   const { owner, name } = parseRepo(repo);
-  const branchInfo = await ensureBranch(owner, name, branch, auth.token);
+  const branchInfo = await ensureBranch(owner, name, branch, auth.token, {
+    baseBranch,
+    correlationId
+  });
 
   for (const file of files || []) {
-    await upsertFile(owner, name, branchInfo.branch, file.path, file.content, auth.token, file.message || null);
+    await upsertFile(
+      owner,
+      name,
+      branchInfo.branch,
+      file.path,
+      file.content,
+      auth.token,
+      file.message || null,
+      correlationId
+    );
   }
 
   const pr = await ensurePullRequest(
@@ -325,7 +394,8 @@ async function syncDocsToPullRequest({ repo, branch, title, description, files, 
     branchInfo.base,
     title,
     description,
-    auth.token
+    auth.token,
+    correlationId
   );
 
   return {
